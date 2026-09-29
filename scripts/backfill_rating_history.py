@@ -17,7 +17,7 @@ import time
 import requests
 
 from survivor.data.rating_history import record_weekly_ratings
-from survivor.data.survivorgrid_client import dedupe_schedule_games, fetch_week_html, parse_schedule_grid
+from survivor.data.survivorgrid_client import dedupe_schedule_games, fetch_week_html_cached, parse_schedule_grid
 from survivor.probability.ratings import DEFAULT_RIDGE, fit_team_ratings
 
 YEARS = range(2023, 2026)  # 2023-2025
@@ -31,7 +31,7 @@ def main() -> None:
     for year in YEARS:
         for week in WEEKS:
             try:
-                html = fetch_week_html(year, week)
+                html, from_cache = fetch_week_html_cached(year, week)  # past seasons: never change
             except requests.HTTPError:
                 skipped += 1
                 continue
@@ -42,7 +42,8 @@ def main() -> None:
 
             if len(week_games) < 2:  # not enough games to fit anything meaningful
                 skipped += 1
-                time.sleep(DELAY_SECONDS)
+                if not from_cache:
+                    time.sleep(DELAY_SECONDS)
                 continue
 
             fit = fit_team_ratings(week_games, ridge=DEFAULT_RIDGE)
@@ -50,7 +51,8 @@ def main() -> None:
             recorded += 1
             print(f"{year} week {week:2d}: fitted {len(week_games)} games, "
                   f"HFA={fit.home_field_advantage:.2f}")
-            time.sleep(DELAY_SECONDS)
+            if not from_cache:
+                time.sleep(DELAY_SECONDS)
 
     print(f"\nRecorded {recorded} (year, week) snapshots, skipped {skipped} (missing pages or too few games).")
 

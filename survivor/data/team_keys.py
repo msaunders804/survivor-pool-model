@@ -47,6 +47,9 @@ ABBREVIATION_TO_FULL_NAME: dict[str, str] = {v: k for k, v in FULL_NAME_TO_ABBRE
 
 assert len(FULL_NAME_TO_ABBREVIATION) == 32, "expected exactly 32 NFL teams"
 
+# Canonical team order (alphabetical by abbreviation) for any array indexed by team.
+ALL_TEAMS: list[str] = sorted(ABBREVIATION_TO_FULL_NAME)
+
 # Alternate abbreviations used by other sources, mapped to the canonical one
 # above. Confirmed: SurvivorGrid uses WSH for Washington where the odds and
 # schedule sources use WAS. Add more here as new sources reveal them.

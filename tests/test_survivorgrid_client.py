@@ -336,7 +336,7 @@ def test_fetch_season_to_date_games_fetches_one_page_per_week(monkeypatch):
     monkeypatch.setattr(survivorgrid_client, "fetch_week_html", fake_fetch_week_html)
     monkeypatch.setattr(survivorgrid_client.time, "sleep", lambda _: None)
 
-    fetch_season_to_date_games(2026, through_week=3, delay_seconds=0)
+    fetch_season_to_date_games(2026, through_week=3, delay_seconds=0, cache_dir=None)
     assert calls == [(2026, 1), (2026, 2), (2026, 3)]
 
 
@@ -350,7 +350,7 @@ def test_fetch_season_to_date_games_tags_each_row_with_its_own_week(monkeypatch)
     monkeypatch.setattr(survivorgrid_client, "fetch_week_html", lambda year, week: WEEK_PAGES[week])
     monkeypatch.setattr(survivorgrid_client.time, "sleep", lambda _: None)
 
-    games = fetch_season_to_date_games(2026, through_week=3, delay_seconds=0)
+    games = fetch_season_to_date_games(2026, through_week=3, delay_seconds=0, cache_dir=None)
     assert set(games["week"]) == {1, 2}  # week 3 is a bye, dropped -- see next test
     week1 = games[games.week == 1].iloc[0]
     assert week1["home_team"] == "LAC" and week1["away_team"] == "ARI"
@@ -362,5 +362,45 @@ def test_fetch_season_to_date_games_drops_bye_weeks(monkeypatch):
     monkeypatch.setattr(survivorgrid_client, "fetch_week_html", lambda year, week: WEEK_PAGES[week])
     monkeypatch.setattr(survivorgrid_client.time, "sleep", lambda _: None)
 
-    games = fetch_season_to_date_games(2026, through_week=3, delay_seconds=0)
+    games = fetch_season_to_date_games(2026, through_week=3, delay_seconds=0, cache_dir=None)
     assert not (games["week"] == 3).any()
+
+
+def test_fetch_week_html_cached_fetches_once_then_serves_from_disk(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(survivorgrid_client, "fetch_week_html", lambda year, week: calls.append((year, week)) or "<html>page</html>")
+
+    first = survivorgrid_client.fetch_week_html_cached(2025, 3, tmp_path)
+    second = survivorgrid_client.fetch_week_html_cached(2025, 3, tmp_path)
+
+    assert first == ("<html>page</html>", False)
+    assert second == ("<html>page</html>", True)
+    assert calls == [(2025, 3)]
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_fetch_week_html_cached_with_no_cache_dir_always_fetches_and_writes_nothing(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(survivorgrid_client, "fetch_week_html", lambda year, week: calls.append(1) or "<html/>")
+
+    survivorgrid_client.fetch_week_html_cached(2025, 3, None)
+    survivorgrid_client.fetch_week_html_cached(2025, 3, None)
+
+    assert len(calls) == 2
+    assert not list(tmp_path.iterdir())
+
+
+def test_season_to_date_games_only_sleeps_after_live_fetches(tmp_path, monkeypatch):
+    games = pd.DataFrame({"week": [1], "home_team": ["BUF"], "away_team": ["NYJ"], "home_spread": [-3.0]})
+    monkeypatch.setattr(survivorgrid_client, "fetch_week_html", lambda year, week: "<html/>")
+    monkeypatch.setattr(survivorgrid_client, "parse_schedule_grid", lambda html, start_week: None)
+    monkeypatch.setattr(survivorgrid_client, "dedupe_schedule_games", lambda grid: games)
+    sleeps = []
+    monkeypatch.setattr(survivorgrid_client.time, "sleep", sleeps.append)
+
+    survivorgrid_client.fetch_season_to_date_games(2026, through_week=1, delay_seconds=1.0, cache_dir=tmp_path)
+    assert sleeps == [1.0]
+
+    # second run is served from the cache: no fetch, so no courtesy delay
+    survivorgrid_client.fetch_season_to_date_games(2026, through_week=1, delay_seconds=1.0, cache_dir=tmp_path)
+    assert sleeps == [1.0]

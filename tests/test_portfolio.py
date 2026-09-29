@@ -442,3 +442,38 @@ def test_greedy_local_entry_allocation_reuses_a_shared_cache_across_calls():
     # shouldn't add any new cache entries
     greedy_local_entry_allocation(sim, used_teams_by_entry, ["BUF", "KC"], elimination_weeks=shared_cache)
     assert len(shared_cache) == size_after_first_call
+
+
+def _reference_score_entries(sim, elimination_weeks_by_entry):
+    """Straightforward per-entry scoring, the definition the additive-totals version must match."""
+    n_paths = sim.n_paths
+    weeks = np.array(sim.weeks)
+    your_alive_after = np.zeros((len(weeks), n_paths), dtype=int)
+    for elim in elimination_weeks_by_entry.values():
+        for w_idx, week in enumerate(sim.weeks):
+            your_alive_after[w_idx] += (elim == -1) | (elim > week)
+    total_alive_after = sim.alive_count_by_week + your_alive_after
+    is_zero = total_alive_after == 0
+    has_emptied = is_zero.any(axis=0)
+    first_zero_idx = is_zero.argmax(axis=0)
+    before = np.vstack([np.full(n_paths, sim.n_rivals + len(elimination_weeks_by_entry)), total_alive_after[:-1]])
+    cohort_size = before[first_zero_idx, np.arange(n_paths)]
+    true_emptied_week = np.where(has_emptied, weeks[first_zero_idx], -1)
+    full = sum((e == -1).astype(int) for e in elimination_weeks_by_entry.values())
+    cohort = sum((e == true_emptied_week).astype(int) for e in elimination_weeks_by_entry.values())
+    return np.where(
+        full > 0,
+        sim.pot * full / np.where(full > 0, sim.rival_survivors + full, 1),
+        np.where(cohort > 0, sim.pot * cohort / np.where(cohort > 0, cohort_size, 1), 0.0),
+    )
+
+
+def test_score_entries_matches_a_per_entry_reference_including_emptied_fields():
+    # few rivals and many entries so the whole field empties on plenty of
+    # paths -- that's where the cohort-split branch is exercised
+    sim = _real_sim(n_paths=400, n_rivals=3)
+    rng = np.random.default_rng(0)
+    arrays = {f"e{i}": rng.choice([-1, *sim.weeks], size=sim.n_paths) for i in range(6)}
+
+    assert (sim.alive_count_by_week.min(axis=0) == 0).any()
+    np.testing.assert_array_equal(score_entries(sim, arrays), _reference_score_entries(sim, arrays))

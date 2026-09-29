@@ -39,26 +39,34 @@ this run's recommendation into the tracker as each entry's pick for
 --week; without it, this is a look, not a commitment. Marking who actually
 won or lost each week (record_result) is a separate, manual step for now.
 
-Runtime scales with --n-paths: precomputing elimination arrays for every
-team playing (needed for the all-candidate search) is the added cost
-beyond Phase 5's own validated field-simulation runtime, since it's one
-Hungarian-assignment solve per (used-teams history, team) pair -- same as
-per-team once entries share a history, as they do for a fresh --week 4.
-The recommendation search, its sanity check, and both payout rebuilds all
-share one cache (elimination_weeks passed into greedy_local_entry_
-allocation), so a pair already solved for the full candidate list isn't
-re-solved for the sanity check's subset or to rebuild either one's payout
-array -- confirmed this halves what would otherwise be redundant solves,
-with byte-for-byte identical results (verified at fixed --seed before and
-after). Measured on real Week 4, 2026 data at 500 rivals, ~32 teams,
-fresh entries: 2,000 paths ~67s, extrapolating to ~9 minutes at the
-20,000-path default and ~36-40 minutes at 80,000 (Phase 5's own budget,
-over its 30-minute bar -- use a lower --n-paths for a quick look and raise
-it for the final pre-lock run). Diverged histories cost more (up to one
-solve per distinct history per team, not one total) and a later --week
-needs one more free SurvivorGrid request per elapsed week for the rating
-fit, but both are small next to the simulation's own cost at any
-reasonable --n-paths.
+Rival field: the default --rival-model ghost estimates how many rivals
+survive each week from a few "ghost" rivals per path instead of simulating
+every rival (survivor/simulation/rival_field.py has the method), so cost
+doesn't grow with field size -- set --n-rivals to the real number freely.
+It was validated against the per-rival model (--rival-model individual) on
+real Week 4, 2026 data: same-path survival probabilities unbiased against a
+20,000-rival reference, candidate payouts and the field-emptying rate within
+noise, and the 2023-2025 elimination-curve check passes. Its one known bias
+is survivor-count variance running a few percent high (~4%). A fresh league
+(Week 4) needs nothing more. For a later --week, paste the pool's per-team
+availability table into a text file and pass --rival-availability: it sets
+the real live-entry count and each team's used rate, instead of assuming
+every rival still has every team.
+
+Runtime scales with --n-paths. Measured offline on real Week 4, 2026 data
+(ghost rivals, ~32 teams, 10 fresh entries), 20,000 paths, the default:
+~24 seconds end to end (~9s field simulation, ~14s recommendation search,
+under 1s sanity check), 0.4 GB peak memory, the same at 500 or 2,500
+rivals. That covers the elimination arrays for every team playing (one
+Hungarian-assignment solve per (used-teams history, team) pair, batched
+across paths -- see field_simulator.team_elimination_week), which the
+recommendation search, its sanity check and both payout rebuilds share
+through one cache (elimination_weeks passed into greedy_local_entry_
+allocation). Diverged histories cost more (up to one solve per distinct
+history per team, not one total) and a later --week needs one more free
+SurvivorGrid request per elapsed week for the rating fit (cached on disk
+once fetched), but both are small next to the search itself. Excludes the
+schedule/odds refresh network calls, which this timing skipped.
 
 Rating fit uses this week's real spreads plus every earlier week's real
 closing spreads this season (survivor.data.survivorgrid_client.
@@ -82,6 +90,7 @@ import numpy as np
 import pandas as pd
 
 from survivor.data import my_entries, schedule_client
+from survivor.data.availability import load_availability
 from survivor.data.odds_client import OddsAPIClient, parse_odds_events
 from survivor.data.storage import DEFAULT_STORE_ROOT, save_raw_pull
 from survivor.data.survivorgrid_client import fetch_season_to_date_games
@@ -89,8 +98,10 @@ from survivor.decision.portfolio import greedy_local_entry_allocation, score_ent
 from survivor.probability.current_week import compute_current_week_probabilities, compute_current_week_spreads
 from survivor.probability.ratings import DEFAULT_SEASON_TO_DATE_RIDGE, fit_team_ratings
 from survivor.simulation.field_simulator import simulate_rival_field
+from survivor.simulation.rival_field import RivalFieldState
 
 FINAL_WEEK = 18
+LEAGUE_START_WEEK = 4  # this league's first pick week: every rival has every team available going into it
 TOP_N_FOR_SANITY_CHECK = 5
 
 
@@ -123,7 +134,17 @@ def main() -> None:
     parser.add_argument("--week", type=int, required=True, help="the current week to decide for")
     parser.add_argument("--year", type=int, default=2026)
     parser.add_argument("--n-entries", type=int, default=10)
-    parser.add_argument("--n-rivals", type=int, default=500, help="assumed field size -- unknown until lock day")
+    parser.add_argument("--n-rivals", type=int, default=500,
+                         help="assumed field size -- unknown until lock day (ignored with --rival-availability, "
+                              "which carries the real live-entry count)")
+    parser.add_argument("--rival-model", choices=["ghost", "individual"], default="ghost",
+                         help="how the rival field is simulated: 'ghost' (default) estimates survivor counts from a "
+                              "few ghost rivals per path, so cost doesn't grow with field size; 'individual' "
+                              "simulates every rival (the reference it was validated against -- see the docstring)")
+    parser.add_argument("--rival-availability", metavar="FILE",
+                         help="text file with the pool's per-team availability table (live entries that can still "
+                              "pick each team), pasted from Splash; sets the rival field's real size and used-team "
+                              "rates for any --week after the league's first. Omit for a fresh league.")
     parser.add_argument("--n-paths", type=int, default=20000, help="see docstring for the runtime-vs-precision tradeoff")
     parser.add_argument("--pot", type=float, default=9000.0)
     parser.add_argument("--seed", type=int, default=None)
@@ -180,13 +201,28 @@ def main() -> None:
         ]
     ).to_dict()
 
-    print(f"\nRunning field simulation: {args.n_paths} paths, {args.n_rivals} rivals, "
+    picks_made = args.week - LEAGUE_START_WEEK
+    if args.rival_availability:
+        if picks_made < 1:
+            raise SystemExit(f"--rival-availability needs --week after the league's first (week {LEAGUE_START_WEEK}): "
+                             "in the first week every rival has every team available.")
+        n_alive, available = load_availability(args.rival_availability)
+        rival_state = RivalFieldState.from_availability(n_alive, picks_made, available)  # checks the table adds up
+        print(f"\nRival field from availability table: {n_alive} live entries, {picks_made} picks each.")
+    else:
+        if picks_made > 0:
+            print(f"\nNote: week {args.week} is {picks_made} week(s) into the league but no --rival-availability was "
+                  "given -- rivals are simulated as if fresh (every team available), which overstates their options.")
+        rival_state = RivalFieldState.fresh(args.n_rivals)
+
+    print(f"\nRunning field simulation ({args.rival_model} rivals): {args.n_paths} paths, {rival_state.n_alive} rivals, "
           f"Weeks {args.week}-{FINAL_WEEK}...")
     rng = np.random.default_rng(args.seed)
     sim = simulate_rival_field(
         schedule, fit.ratings, fit.home_field_advantage,
-        current_week=args.week, final_week=FINAL_WEEK, n_paths=args.n_paths, n_rivals=args.n_rivals, pot=args.pot,
+        current_week=args.week, final_week=FINAL_WEEK, n_paths=args.n_paths, n_rivals=rival_state.n_alive, pot=args.pot,
         current_week_survival_probability=current_week_survival, rng=rng,
+        rival_model=args.rival_model, rival_state=rival_state,
     )
 
     entry_ids = [f"entry_{i + 1}" for i in range(args.n_entries)]
@@ -208,6 +244,12 @@ def main() -> None:
     # just to rebuild each result's own payout array for scoring.
     elimination_cache: dict = {}
 
+    def cached_arrays(assignment: dict[str, str]) -> dict:
+        return {
+            entry_id: elimination_cache[(frozenset(used_teams_by_entry[entry_id]), team)]
+            for entry_id, team in assignment.items()
+        }
+
     recommendation = greedy_local_entry_allocation(
         sim, used_teams_by_entry, all_teams_playing, elimination_weeks=elimination_cache
     )
@@ -215,11 +257,7 @@ def main() -> None:
     team_counts: dict[str, int] = {}
     for team in recommendation.values():
         team_counts[team] = team_counts.get(team, 0) + 1
-    recommendation_arrays = {
-        entry_id: elimination_cache[(frozenset(used_teams_by_entry[entry_id]), team)]
-        for entry_id, team in recommendation.items()
-    }
-    recommendation_payout = score_entries(sim, recommendation_arrays)
+    recommendation_payout = score_entries(sim, cached_arrays(recommendation))
     print(f"\nRecommended allocation ({team_counts}):")
     for entry_id, team in sorted(recommendation.items()):
         history = used_teams_by_entry[entry_id]
@@ -232,11 +270,7 @@ def main() -> None:
     sanity_check = greedy_local_entry_allocation(
         sim, used_teams_by_entry, top_candidates, elimination_weeks=elimination_cache
     )
-    sanity_arrays = {
-        entry_id: elimination_cache[(frozenset(used_teams_by_entry[entry_id]), team)]
-        for entry_id, team in sanity_check.items()
-    }
-    sanity_payout = score_entries(sim, sanity_arrays)
+    sanity_payout = score_entries(sim, cached_arrays(sanity_check))
     print(f"\nSanity check -- same search, restricted to the top {len(top_candidates)} candidates by survival "
           f"probability ({top_candidates}):")
     print(f"  Expected total payout: {sanity_payout.mean():.2f} "

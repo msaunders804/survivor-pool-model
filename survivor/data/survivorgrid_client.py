@@ -13,22 +13,48 @@ from __future__ import annotations
 
 import re
 import time
+from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
+from survivor.data.storage import DEFAULT_STORE_ROOT
 from survivor.data.team_keys import to_abbreviation
 
 BASE_URL = "https://www.survivorgrid.com"
 USER_AGENT = "Mozilla/5.0 (compatible; survivor-pool-research/1.0)"
 TEAM_PATTERN = re.compile(r"[A-Z]+")
+HTML_CACHE_DIR = DEFAULT_STORE_ROOT / "survivorgrid_html"
 
 
 def fetch_week_html(year: int, week: int) -> str:
     response = requests.get(f"{BASE_URL}/{year}/{week}", headers={"User-Agent": USER_AGENT}, timeout=30)
     response.raise_for_status()
     return response.text
+
+
+def fetch_week_html_cached(year: int, week: int, cache_dir: Path | None = HTML_CACHE_DIR) -> tuple[str, bool]:
+    """fetch_week_html, read from / saved to a disk cache. Returns (html, served_from_cache).
+
+    Only for pages that no longer change -- a past season, or a week
+    whose games have all been played -- since a cached page is never
+    refetched. Callers can skip their courtesy delay when the second value
+    is True. cache_dir=None bypasses the cache entirely (live pull, nothing
+    written).
+    """
+    if cache_dir is None:
+        return fetch_week_html(year, week), False
+    path = cache_dir / f"{year}_{week}.html"
+    if path.exists():
+        return path.read_text(encoding="utf-8"), True
+    html = fetch_week_html(year, week)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".html.tmp")
+    tmp_path.write_text(html, encoding="utf-8")
+    tmp_path.replace(path)  # atomic, so an interrupted write never leaves a truncated cache file
+    return html, False
 
 
 def parse_pick_grid(html: str) -> pd.DataFrame:
@@ -147,7 +173,9 @@ def dedupe_schedule_games(schedule_grid: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["week", "home_team", "away_team", "home_spread"])
 
 
-def fetch_season_to_date_games(year: int, through_week: int, delay_seconds: float = 1.0) -> pd.DataFrame:
+def fetch_season_to_date_games(
+    year: int, through_week: int, delay_seconds: float = 1.0, cache_dir: Path | None = HTML_CACHE_DIR
+) -> pd.DataFrame:
     """Every already-played week's real closing spreads, weeks 1..through_week.
 
     One fetch per week, each week's own page for that week's own real
@@ -164,16 +192,20 @@ def fetch_season_to_date_games(year: int, through_week: int, delay_seconds: floa
     down to 2.01, and combined with a small ridge, to about 1.73.
 
     Paced at 1 request/second out of courtesy -- unofficial, undocumented
-    source with no published rate limit.
+    source with no published rate limit. Pages are cached on disk
+    (cache_dir; None disables it): through_week should be a week whose games have all
+    been played, so its closing spreads are final and never need
+    refetching -- a later run only fetches the weeks it hasn't seen.
     """
     frames = []
     for week in range(1, through_week + 1):
-        html = fetch_week_html(year, week)
+        html, from_cache = fetch_week_html_cached(year, week, cache_dir)
         schedule_grid = parse_schedule_grid(html, start_week=week)
         all_games = dedupe_schedule_games(schedule_grid)
         week_games = all_games[all_games["week"] == week].dropna()
         frames.append(week_games)
-        time.sleep(delay_seconds)
+        if not from_cache:
+            time.sleep(delay_seconds)
     return pd.concat(frames, ignore_index=True)
 
 
@@ -195,7 +227,10 @@ def _parse_float(text: str) -> float | None:
 
 def fetch_pick_grid(year: int, week: int) -> pd.DataFrame:
     """One live pull for a single year/week, tagged with that year and week."""
-    df = parse_pick_grid(fetch_week_html(year, week))
+    return _tag_pick_grid(parse_pick_grid(fetch_week_html(year, week)), year, week)
+
+
+def _tag_pick_grid(df: pd.DataFrame, year: int, week: int) -> pd.DataFrame:
     df.insert(0, "week", week)
     df.insert(0, "year", year)
     return df
@@ -212,8 +247,11 @@ def fetch_historical_pick_grids(years: range, weeks: range, delay_seconds: float
     for year in years:
         for week in weeks:
             try:
-                frames.append(fetch_pick_grid(year, week))
+                # past seasons never change, so they're cached; the current one still is live
+                html, from_cache = fetch_week_html_cached(year, week, HTML_CACHE_DIR if year < date.today().year else None)
             except requests.HTTPError:
                 continue  # e.g. a week/year combination that doesn't exist
-            time.sleep(delay_seconds)
+            frames.append(_tag_pick_grid(parse_pick_grid(html), year, week))
+            if not from_cache:
+                time.sleep(delay_seconds)
     return pd.concat(frames, ignore_index=True)

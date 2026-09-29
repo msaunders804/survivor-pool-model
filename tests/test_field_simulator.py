@@ -2,12 +2,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import survivor.simulation.field_simulator as field_simulator
+from survivor.simulation.assignment import assign_max_survival_picks
 from survivor.simulation.field_simulator import (
+    ALL_TEAMS,
     N_TEAMS,
     TEAM_INDEX,
     FieldSimulation,
     score_candidate,
     simulate_rival_field,
+    team_elimination_week,
 )
 
 
@@ -174,3 +178,58 @@ def test_near_impossible_win_has_near_zero_expected_payout_regardless_of_leverag
     )
     dog_payouts = score_candidate(sim, "MIA")
     assert dog_payouts.mean() < 1.0  # pot is 1000; this should be near enough to 0
+
+
+def _reference_team_elimination_week(sim, team, used_teams_before=None):
+    """The original one-path-at-a-time definition team_elimination_week must match exactly."""
+    excluded = (used_teams_before or set()) | {team}
+    future_weeks = sim.weeks[1:]
+    eliminated_week = np.full(sim.n_paths, -1, dtype=int)
+    for path in range(sim.n_paths):
+        picks = {sim.weeks[0]: team}
+        if future_weeks:
+            survival_lookup = {}
+            for w_idx, week in enumerate(future_weeks, start=1):
+                survival_lookup[week] = {
+                    other: sim.survival_probability[w_idx, path, TEAM_INDEX[other]]
+                    for other in ALL_TEAMS
+                    if other not in excluded and sim.playing[w_idx, TEAM_INDEX[other]]
+                }
+            picks.update(assign_max_survival_picks(future_weeks, survival_lookup))
+        for w_idx, week in enumerate(sim.weeks):
+            if not sim.team_wins[w_idx, path, TEAM_INDEX[picks[week]]]:
+                eliminated_week[path] = week
+                break
+    return eliminated_week
+
+
+def _six_week_sim_with_byes(n_paths=40):
+    teams = ALL_TEAMS[:10]
+    rows = []
+    for week in range(4, 10):
+        playing = [t for i, t in enumerate(teams) if (i + week) % 5 != 0]  # two teams on bye each week
+        rows += [{"week": week, "home_team": playing[i], "away_team": playing[i + 1]} for i in range(0, len(playing), 2)]
+    ratings = {t: r for t, r in zip(teams, np.linspace(-3, 3, len(teams)))}
+    return simulate_rival_field(
+        pd.DataFrame(rows), ratings, home_field_advantage=1.0, weekly_rating_std=1.5,
+        current_week=4, final_week=9, n_paths=n_paths, n_rivals=5, pot=100.0, rng=np.random.default_rng(3),
+    )
+
+
+@pytest.mark.parametrize("team,used", [(ALL_TEAMS[1], None), (ALL_TEAMS[2], {ALL_TEAMS[3]}), (ALL_TEAMS[6], {ALL_TEAMS[0], ALL_TEAMS[7]})])
+def test_team_elimination_week_matches_the_per_path_reference(team, used, monkeypatch):
+    sim = _six_week_sim_with_byes()
+    # tiny chunks so paths straddle several chunk boundaries
+    monkeypatch.setattr(field_simulator, "_ELIMINATION_CHUNK_PATHS", 7)
+
+    np.testing.assert_array_equal(team_elimination_week(sim, team, used), _reference_team_elimination_week(sim, team, used))
+
+
+def test_team_elimination_week_single_week_needs_no_assignment():
+    sim = _six_week_sim_with_byes()
+    one_week = FieldSimulation(**{**sim.__dict__, "weeks": sim.weeks[:1], "survival_probability": sim.survival_probability[:1],
+                                  "team_wins": sim.team_wins[:1], "playing": sim.playing[:1],
+                                  "alive_count_by_week": sim.alive_count_by_week[:1]})
+    team = ALL_TEAMS[1]
+
+    np.testing.assert_array_equal(team_elimination_week(one_week, team), _reference_team_elimination_week(one_week, team))

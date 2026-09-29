@@ -157,34 +157,89 @@ def score_entries(sim: FieldSimulation, elimination_weeks_by_entry: dict[str, np
     if not elimination_weeks_by_entry:
         raise ValueError("elimination_weeks_by_entry must be non-empty")
 
-    n_weeks = len(sim.weeks)
-    n_paths = sim.n_paths
-    n_my_entries = len(elimination_weeks_by_entry)
+    totals = _Totals.zero(sim)
+    for elim in elimination_weeks_by_entry.values():
+        totals = totals + _Totals.of(sim, elim)
+    return _payouts(sim, totals)
 
-    # how many of your entries are still alive after each week, per path
-    your_alive_after = np.zeros((n_weeks, n_paths), dtype=int)
-    for elim in elimination_weeks_by_entry.values():  # -1 = never eliminated within the horizon
-        for w_idx, week in enumerate(sim.weeks):
-            your_alive_after[w_idx] += (elim == -1) | (elim > week)
+
+@dataclass
+class _Totals:
+    """Additive per-path aggregates of a set of entries -- all score_entries needs.
+
+    Payout depends on the entries only through three sums, so a portfolio's
+    score is a sum of per-entry contributions, and a search move (add,
+    remove or swap one entry) is an add/subtract instead of a rescore over
+    every entry:
+      alive_after (n_weeks, n_paths): entries still alive after each week
+      cohort (n_weeks, n_paths): entries eliminated in each week (the
+        cohort that splits if that week empties the whole field)
+      full (n_paths,): entries that survive the whole horizon
+    """
+
+    alive_after: np.ndarray
+    cohort: np.ndarray
+    full: np.ndarray
+    n_entries: int
+
+    @classmethod
+    def zero(cls, sim: FieldSimulation) -> "_Totals":
+        shape = (len(sim.weeks), sim.n_paths)
+        return cls(np.zeros(shape, np.int16), np.zeros(shape, np.int16), np.zeros(sim.n_paths, np.int16), 0)
+
+    @classmethod
+    def of(cls, sim: FieldSimulation, elim: np.ndarray) -> "_Totals":
+        """One entry's contribution, from its elimination-week array (-1 = survives the horizon)."""
+        weeks = np.asarray(sim.weeks)[:, None]
+        never = elim == -1
+        return cls(
+            (never | (elim > weeks)).astype(np.int16),
+            (elim == weeks).astype(np.int16),
+            never.astype(np.int16),
+            1,
+        )
+
+    def scaled(self, k: int) -> "_Totals":
+        return _Totals(self.alive_after * k, self.cohort * k, self.full * k, self.n_entries * k)
+
+    def __add__(self, other: "_Totals") -> "_Totals":
+        return _Totals(
+            self.alive_after + other.alive_after,
+            self.cohort + other.cohort,
+            self.full + other.full,
+            self.n_entries + other.n_entries,
+        )
+
+    def __sub__(self, other: "_Totals") -> "_Totals":
+        return _Totals(
+            self.alive_after - other.alive_after,
+            self.cohort - other.cohort,
+            self.full - other.full,
+            self.n_entries - other.n_entries,
+        )
+
+
+def _payouts(sim: FieldSimulation, totals: _Totals) -> np.ndarray:
+    """Per-path payout for aggregated entries -- the scoring rule score_entries documents."""
+    n_paths = sim.n_paths
+    paths = np.arange(n_paths)
 
     # rivals + yours, jointly -- this is the field the plan's payout rule
     # actually means, not rivals alone
-    total_alive_after = sim.alive_count_by_week + your_alive_after
+    total_alive_after = sim.alive_count_by_week + totals.alive_after
 
     is_zero = total_alive_after == 0
     has_emptied = is_zero.any(axis=0)
     first_zero_idx = is_zero.argmax(axis=0)  # 0 where has_emptied is False; unused there
 
-    initial_total = sim.n_rivals + n_my_entries
+    initial_total = sim.n_rivals + totals.n_entries
     before = np.vstack([np.full(n_paths, initial_total), total_alive_after[:-1]])
-    cohort_size = before[first_zero_idx, np.arange(n_paths)]
-    true_emptied_week = np.where(has_emptied, np.array(sim.weeks)[first_zero_idx], -1)
+    cohort_size = before[first_zero_idx, paths]
 
-    my_full_survivors = np.zeros(n_paths, dtype=int)
-    my_cohort = np.zeros(n_paths, dtype=int)
-    for elim in elimination_weeks_by_entry.values():
-        my_full_survivors += elim == -1
-        my_cohort += elim == true_emptied_week
+    my_full_survivors = totals.full.astype(int)
+    # only read where no entry of yours survives the horizon, where the
+    # cohort is exactly your entries eliminated in the week the field emptied
+    my_cohort = np.where(has_emptied, totals.cohort[first_zero_idx, paths], 0).astype(int)
 
     # guard both denominators against 0/0 on paths where the branch that
     # uses them isn't the one np.where ends up selecting (np.where still
@@ -224,10 +279,18 @@ def score_allocation(
     if missing:
         raise ValueError(f"elimination_weeks missing entries for: {sorted(missing)}")
 
-    elimination_weeks_by_entry = {
-        f"{team}#{i}": elimination_weeks[team] for team, count in allocation.items() for i in range(count)
-    }
-    return score_entries(sim, elimination_weeks_by_entry)
+    contributions = {team: _Totals.of(sim, elimination_weeks[team]) for team in allocation}
+    return _allocation_payouts(sim, allocation, contributions)
+
+
+def _allocation_payouts(
+    sim: FieldSimulation, allocation: dict[str, int], contributions: dict[str, _Totals]
+) -> np.ndarray:
+    """score_allocation from precomputed per-team contributions (computed once, reused across allocations)."""
+    totals = _Totals.zero(sim)
+    for team, count in allocation.items():
+        totals = totals + contributions[team].scaled(count)
+    return _payouts(sim, totals)
 
 
 def _standard_error(payouts: np.ndarray, n_paths: int) -> float:
@@ -265,8 +328,9 @@ def best_allocations(
         if missing:
             raise ValueError(f"elimination_weeks missing candidate teams: {sorted(missing)}")
 
+    contributions = {team: _Totals.of(sim, elimination_weeks[team]) for team in candidate_teams}
     scored = [
-        (allocation, score_allocation(sim, allocation, elimination_weeks))
+        (allocation, _allocation_payouts(sim, allocation, contributions))
         for allocation in enumerate_allocations(n_entries, candidate_teams)
     ]
     scored.sort(key=lambda item: item[1].mean(), reverse=True)
@@ -322,15 +386,21 @@ def greedy_local_allocation(
         if missing:
             raise ValueError(f"elimination_weeks missing candidate teams: {sorted(missing)}")
 
-    def mean_payout(allocation: dict[str, int]) -> float:
-        return float(score_allocation(sim, allocation, elimination_weeks).mean())
+    contributions = {team: _Totals.of(sim, elimination_weeks[team]) for team in candidate_teams}
 
+    def mean_of(totals: _Totals) -> float:
+        return float(_payouts(sim, totals).mean())
+
+    # running totals for `allocation`, updated by add/subtract per move
+    # instead of rescoring every entry from scratch
     allocation: dict[str, int] = {}
+    totals = _Totals.zero(sim)
     for _ in range(n_entries):
-        best_team = max(candidate_teams, key=lambda team: mean_payout({**allocation, team: allocation.get(team, 0) + 1}))
+        best_team = max(candidate_teams, key=lambda team: mean_of(totals + contributions[team]))
         allocation[best_team] = allocation.get(best_team, 0) + 1
+        totals = totals + contributions[best_team]
 
-    current_mean = mean_payout(allocation)
+    current_mean = mean_of(totals)
     improved = True
     while improved:
         improved = False
@@ -340,17 +410,17 @@ def greedy_local_allocation(
                     continue
                 if allocation.get(from_team, 0) == 0:
                     break  # an earlier move already this pass moved from_team's last entry away
-                trial = dict(allocation)
-                trial[from_team] -= 1
-                if trial[from_team] == 0:
-                    del trial[from_team]
-                trial[to_team] = trial.get(to_team, 0) + 1
-                trial_mean = mean_payout(trial)
+                trial_totals = totals - contributions[from_team] + contributions[to_team]
+                trial_mean = mean_of(trial_totals)
                 if trial_mean > current_mean:
-                    allocation, current_mean = trial, trial_mean
+                    allocation[from_team] -= 1
+                    if allocation[from_team] == 0:
+                        del allocation[from_team]
+                    allocation[to_team] = allocation.get(to_team, 0) + 1
+                    totals, current_mean = trial_totals, trial_mean
                     improved = True
 
-    payouts = score_allocation(sim, allocation, elimination_weeks)
+    payouts = _payouts(sim, totals)
     return AllocationResult(
         allocation=allocation,
         mean_payout=float(payouts.mean()),
@@ -415,27 +485,32 @@ def greedy_local_entry_allocation(
 
     cache = elimination_weeks if elimination_weeks is not None else {}
 
-    def elimination_array(entry_id: str, team: str) -> np.ndarray:
+    def contribution(entry_id: str, team: str) -> _Totals:
         key = (frozenset(used_teams_by_entry[entry_id]), team)
         if key not in cache:
             cache[key] = team_elimination_week(sim, team, used_teams_by_entry[entry_id])
-        return cache[key]
+        if key not in contributions:
+            contributions[key] = _Totals.of(sim, cache[key])
+        return contributions[key]
 
-    def mean_payout(assignment: dict[str, str]) -> float:
-        arrays = {entry_id: elimination_array(entry_id, team) for entry_id, team in assignment.items()}
-        return float(score_entries(sim, arrays).mean())
+    def mean_of(totals: _Totals) -> float:
+        return float(_payouts(sim, totals).mean())
+
+    contributions: dict[tuple[frozenset, str], _Totals] = {}
 
     # most-constrained entries (fewest eligible teams) first, a standard
     # heuristic to avoid boxing in a tightly-constrained entry by filling
     # the flexible ones first
     order = sorted(eligible, key=lambda entry_id: len(eligible[entry_id]))
     assignment: dict[str, str] = {}
+    totals = _Totals.zero(sim)  # running totals for `assignment`, moved by add/subtract
     for entry_id in order:
-        best_team = max(eligible[entry_id], key=lambda team: mean_payout({**assignment, entry_id: team}))
+        best_team = max(eligible[entry_id], key=lambda team: mean_of(totals + contribution(entry_id, team)))
         assignment[entry_id] = best_team
+        totals = totals + contribution(entry_id, best_team)
 
     entry_ids = list(used_teams_by_entry)
-    current_mean = mean_payout(assignment)
+    current_mean = mean_of(totals)
     improved = True
     while improved:
         improved = False
@@ -444,11 +519,11 @@ def greedy_local_entry_allocation(
             for team in eligible[entry_id]:
                 if team == assignment[entry_id]:
                     continue
-                trial = dict(assignment)
-                trial[entry_id] = team
-                trial_mean = mean_payout(trial)
+                trial_totals = totals - contribution(entry_id, assignment[entry_id]) + contribution(entry_id, team)
+                trial_mean = mean_of(trial_totals)
                 if trial_mean > current_mean:
-                    assignment, current_mean = trial, trial_mean
+                    assignment[entry_id] = team
+                    totals, current_mean = trial_totals, trial_mean
                     improved = True
         # pairwise swaps: a move that only helps when two entries change
         # together (e.g. each is better off with the other's current team)
@@ -458,11 +533,17 @@ def greedy_local_entry_allocation(
                 team_a, team_b = assignment[a], assignment[b]
                 if team_a == team_b or team_b not in eligible[a] or team_a not in eligible[b]:
                     continue
-                trial = dict(assignment)
-                trial[a], trial[b] = team_b, team_a
-                trial_mean = mean_payout(trial)
+                trial_totals = (
+                    totals
+                    - contribution(a, team_a)
+                    - contribution(b, team_b)
+                    + contribution(a, team_b)
+                    + contribution(b, team_a)
+                )
+                trial_mean = mean_of(trial_totals)
                 if trial_mean > current_mean:
-                    assignment, current_mean = trial, trial_mean
+                    assignment[a], assignment[b] = team_b, team_a
+                    totals, current_mean = trial_totals, trial_mean
                     improved = True
 
     return assignment

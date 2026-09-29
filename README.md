@@ -68,11 +68,14 @@ current week alone -- see Status below for why. Saves the pick sheet to
 .venv/bin/python scripts/run_weekly.py --week 4 --record                # also commit picks into data_store/my_entries/
 ```
 
-Default `--n-paths 20000` runs in a few minutes; raise it (e.g. 80000) for
-the final pre-lock decision, but see the script's own docstring for the
-runtime-vs-precision tradeoff -- precomputing elimination arrays for every
-team playing adds real time beyond Phase 5's own validated budget (more
-once entries have diverged and no longer share a used-teams history).
+Default `--n-paths 20000` runs in about half a minute (measured offline,
+before the network calls); raise it (e.g. 80000) for the final pre-lock
+decision. The rival field is simulated with a "ghost" estimator whose cost
+doesn't depend on field size, so `--n-rivals` can be the real number. From
+Week 5 on, paste the pool's per-team availability table (live entries that
+can still pick each team) into a file and add `--rival-availability FILE`
+to start rivals from their real used-team rates; see the script's docstring
+for what was validated and the one known bias.
 
 `--record` commits this run's recommendation as each entry's pick for
 `--week`; without it, a run is just a look. Marking who actually won or

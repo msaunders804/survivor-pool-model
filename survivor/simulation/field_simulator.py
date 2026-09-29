@@ -17,10 +17,14 @@ Two stages, matching the plan's layered design:
    outcomes and compute its expected payout. Call it once per candidate
    you want to compare, against the same FieldSimulation.
 
-Known simplification: rival entries start fresh (no used teams) at
-current_week, since real per-rival pick history isn't available before
-Phase 8's rival tracker starts collecting it (Week 4 Thursday onward).
-Revisit once that data exists.
+Rivals start fresh (no used teams) at current_week unless a
+rival_field.RivalFieldState says otherwise -- a fresh league (this season's
+Week 4) is exactly that, and later weeks can pass a pool's per-team
+availability counts instead of per-rival pick history.
+
+Two rival models: "individual" simulates every rival's picks (the reference,
+cost scales with the field size) and "ghost" estimates survivor counts from
+a few ghost rivals per path (rival_field.py), independent of field size.
 """
 
 from __future__ import annotations
@@ -30,19 +34,23 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from survivor.data.team_keys import ALL_TEAMS
 from survivor.decision.popularity import DEFAULT_BETA, DEFAULT_GAMMA
 from survivor.probability.current_week import DEFAULT_TIE_PROBABILITY
 from survivor.probability.ratings import DEFAULT_WEEKLY_RATING_STD, sample_correlated_ratings
 from survivor.probability.spread import rating_diff_to_spread, spread_to_win_prob
-from survivor.simulation.assignment import assign_max_survival_picks
+from survivor.simulation.assignment import assign_max_survival_picks_batch
+from survivor.simulation.rival_field import (
+    DEFAULT_N_GHOSTS,
+    RivalFieldState,
+    sample_used_sets,
+    survival_probability_by_week,
+    thin_survivors,
+)
 
-ALL_TEAMS = [
-    "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN",
-    "DET", "GB", "HOU", "IND", "JAX", "KC", "LAC", "LAR", "LV", "MIA",
-    "MIN", "NE", "NO", "NYG", "NYJ", "PHI", "PIT", "SEA", "SF", "TB", "TEN", "WAS",
-]
 TEAM_INDEX = {team: i for i, team in enumerate(ALL_TEAMS)}
 N_TEAMS = len(ALL_TEAMS)
+_ELIMINATION_CHUNK_PATHS = 5000  # bounds team_elimination_week's (paths, weeks, teams) cost tensor to ~50 MB
 
 
 @dataclass
@@ -141,6 +149,22 @@ def _simulate_rival_picks_and_eliminations(
     alive &= ~newly_eliminated
 
 
+def _field_emptying(alive_count_by_week: np.ndarray, n_alive: int, weeks: list[int]) -> tuple[np.ndarray, np.ndarray]:
+    """(field_emptied_week, emptying_cohort_size) per path from alive counts (n_weeks, n_paths).
+
+    The emptying week is the first one whose end-of-week count is 0 with rivals alive going in (-1 / 0 if the
+    field never empties); the cohort is everyone alive going into that week.
+    """
+    n_paths = alive_count_by_week.shape[1]
+    alive_before = np.vstack([np.full(n_paths, n_alive), alive_count_by_week[:-1]])
+    newly_emptied = (alive_before > 0) & (alive_count_by_week == 0)  # at most one week per path: counts never rise
+    emptied_any = newly_emptied.any(axis=0)
+    emptied_idx = newly_emptied.argmax(axis=0)
+    field_emptied_week = np.where(emptied_any, np.asarray(weeks)[emptied_idx], -1)
+    cohort_size = np.where(emptied_any, alive_before[emptied_idx, np.arange(n_paths)], 0)
+    return field_emptied_week, cohort_size
+
+
 def simulate_rival_field(
     schedule: pd.DataFrame,
     base_ratings: dict[str, float],
@@ -156,6 +180,9 @@ def simulate_rival_field(
     popularity_gamma: float = DEFAULT_GAMMA,
     current_week_survival_probability: dict[str, float] | None = None,
     rng: np.random.Generator | None = None,
+    rival_model: str = "individual",
+    rival_state: RivalFieldState | None = None,
+    n_ghosts: int = DEFAULT_N_GHOSTS,
 ) -> FieldSimulation:
     """Simulate n_paths seasons of an n_rivals-entry field from current_week through final_week.
 
@@ -163,7 +190,18 @@ def simulate_rival_field(
     rating projection for current_week only with real market-derived
     probabilities (Phase 2) -- future weeks always use the rating
     projection (Phase 3), since real lines aren't available that far out.
+
+    rival_state describes the live field at current_week (default: n_rivals
+    rivals, all fresh); if given, its n_alive must equal n_rivals.
+    rival_model picks how the field is simulated -- see the module
+    docstring; n_ghosts only applies to "ghost".
     """
+    if rival_model not in ("individual", "ghost"):
+        raise ValueError(f"rival_model must be 'individual' or 'ghost', got {rival_model!r}")
+    if rival_state is None:
+        rival_state = RivalFieldState.fresh(n_rivals)
+    elif rival_state.n_alive != n_rivals:
+        raise ValueError(f"rival_state.n_alive ({rival_state.n_alive}) must equal n_rivals ({n_rivals})")
     rng = rng or np.random.default_rng()
     weeks = list(range(current_week, final_week + 1))
 
@@ -177,8 +215,10 @@ def simulate_rival_field(
     team_wins = np.zeros((len(weeks), n_paths, N_TEAMS), dtype=bool)
     playing = np.zeros((len(weeks), N_TEAMS), dtype=bool)
 
-    alive = np.ones((n_paths, n_rivals), dtype=bool)
-    used = np.zeros((n_paths, n_rivals, N_TEAMS), dtype=bool)
+    individual = rival_model == "individual"
+    if individual:
+        alive = np.ones((n_paths, n_rivals), dtype=bool)
+        used = sample_used_sets(rival_state, n_paths * n_rivals, rng).reshape(n_paths, n_rivals, N_TEAMS)
     alive_count_by_week = np.zeros((len(weeks), n_paths), dtype=int)
     field_emptied_week = np.full(n_paths, -1, dtype=int)
     emptying_cohort_size = np.zeros(n_paths, dtype=int)
@@ -198,6 +238,9 @@ def simulate_rival_field(
         wins = _sample_outcomes(probs, games, rng)
         team_wins[w_idx] = wins
 
+        if not individual:
+            continue  # the ghost model estimates the whole field after every week's outcomes are drawn
+
         win_probability_week = probs / (1 - tie_probability)  # undo the tie adjustment for popularity scoring
         alive_before = alive.sum(axis=1).copy()
 
@@ -212,6 +255,17 @@ def simulate_rival_field(
         field_emptied_week[newly_emptied] = week
         emptying_cohort_size[newly_emptied] = alive_before[newly_emptied].astype(int)
 
+    if individual:
+        rival_survivors = alive.sum(axis=1)
+    else:
+        q = survival_probability_by_week(
+            survival_probability / (1 - tie_probability), team_wins, playing, rival_state,
+            popularity_beta, n_ghosts, rng,
+        )
+        alive_count_by_week = thin_survivors(q, n_rivals, rng)
+        rival_survivors = alive_count_by_week[-1]
+        field_emptied_week, emptying_cohort_size = _field_emptying(alive_count_by_week, n_rivals, weeks)
+
     return FieldSimulation(
         weeks=weeks,
         n_paths=n_paths,
@@ -221,7 +275,7 @@ def simulate_rival_field(
         survival_probability=survival_probability,
         team_wins=team_wins,
         playing=playing,
-        rival_survivors=alive.sum(axis=1),
+        rival_survivors=rival_survivors,
         field_emptied_week=field_emptied_week,
         emptying_cohort_size=emptying_cohort_size,
         alive_count_by_week=alive_count_by_week,
@@ -246,27 +300,31 @@ def team_elimination_week(sim: FieldSimulation, team: str, used_teams_before: se
     used_teams_before = used_teams_before or set()
     excluded = used_teams_before | {team}
     future_weeks = sim.weeks[1:]
+    paths = np.arange(sim.n_paths)
 
-    eliminated_week = np.full(sim.n_paths, -1, dtype=int)
-    for path in range(sim.n_paths):
-        picks: dict[int, str] = {sim.weeks[0]: team}
-        if future_weeks:
-            survival_lookup = {}
-            for w_idx, week in enumerate(future_weeks, start=1):
-                week_probs = {}
-                for other_team in ALL_TEAMS:
-                    if other_team in excluded or not sim.playing[w_idx, TEAM_INDEX[other_team]]:
-                        continue
-                    week_probs[other_team] = sim.survival_probability[w_idx, path, TEAM_INDEX[other_team]]
-                survival_lookup[week] = week_probs
-            picks.update(assign_max_survival_picks(future_weeks, survival_lookup))
+    # this week's pick is fixed
+    survived = sim.team_wins[0, :, TEAM_INDEX[team]][:, np.newaxis]
+    if future_weeks:
+        # teams eligible for at least one future week -- the same column set
+        # (and alphabetical order) assign_max_survival_picks builds per path
+        columns = sorted(
+            t for t in ALL_TEAMS if t not in excluded and sim.playing[1:, TEAM_INDEX[t]].any()
+        )
+        column_index = np.array([TEAM_INDEX[t] for t in columns])
+        available = sim.playing[1:][:, column_index]  # (n_future_weeks, n_columns)
+        future_wins = np.empty((sim.n_paths, len(future_weeks)), dtype=bool)
+        future_rows = np.arange(1, len(sim.weeks))[np.newaxis, :]
+        # chunked so the (paths, weeks, teams) cost tensor stays a bounded size
+        for start in range(0, sim.n_paths, _ELIMINATION_CHUNK_PATHS):
+            chunk = slice(start, min(start + _ELIMINATION_CHUNK_PATHS, sim.n_paths))
+            probs = sim.survival_probability[1:, chunk][:, :, column_index].transpose(1, 0, 2)
+            picked = column_index[assign_max_survival_picks_batch(probs, available)]  # team indices
+            future_wins[chunk] = sim.team_wins[future_rows, paths[chunk, np.newaxis], picked]
+        survived = np.hstack([survived, future_wins])
 
-        for w_idx, week in enumerate(sim.weeks):
-            if not sim.team_wins[w_idx, path, TEAM_INDEX[picks[week]]]:
-                eliminated_week[path] = week
-                break
-
-    return eliminated_week
+    lost = ~survived
+    first_loss = lost.argmax(axis=1)
+    return np.where(lost.any(axis=1), np.asarray(sim.weeks)[first_loss], -1)
 
 
 def score_candidate(sim: FieldSimulation, current_pick: str, used_teams_before: set[str] | None = None) -> np.ndarray:

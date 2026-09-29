@@ -1,6 +1,8 @@
 import pytest
 
-from survivor.simulation.assignment import assign_max_survival_picks
+import numpy as np
+
+from survivor.simulation.assignment import assign_max_survival_picks, assign_max_survival_picks_batch
 
 
 def test_simple_two_week_assignment_avoids_reusing_a_team():
@@ -58,3 +60,28 @@ def test_week_with_no_available_teams_raises():
 
 def test_empty_weeks_returns_empty_assignment():
     assert assign_max_survival_picks([], {}) == {}
+
+
+def test_batch_matches_the_single_scenario_assignment():
+    rng = np.random.default_rng(0)
+    teams = ["A", "B", "C", "D"]
+    probs = rng.uniform(0.05, 0.95, size=(20, 3, 4))
+    available = np.array([[True, True, True, True], [True, False, True, True], [True, True, True, False]])
+
+    batch = assign_max_survival_picks_batch(probs, available)
+
+    for i in range(len(probs)):
+        lookup = {w: {teams[t]: probs[i, w, t] for t in range(4) if available[w, t]} for w in range(3)}
+        single = assign_max_survival_picks([0, 1, 2], lookup)
+        assert [teams[t] for t in batch[i]] == [single[w] for w in range(3)]
+
+
+def test_batch_more_weeks_than_teams_raises():
+    with pytest.raises(ValueError, match="distinct teams"):
+        assign_max_survival_picks_batch(np.full((2, 3, 2), 0.5), np.ones((3, 2), dtype=bool))
+
+
+def test_batch_week_with_no_available_teams_raises():
+    available = np.array([[True, True], [False, False]])
+    with pytest.raises(ValueError, match="no available teams"):
+        assign_max_survival_picks_batch(np.full((2, 2, 2), 0.5), available)

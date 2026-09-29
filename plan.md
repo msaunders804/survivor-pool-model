@@ -136,7 +136,8 @@ open validation gap. Status by phase:
   tracker), but the actual lock-day behaviors don't — no Thursday-vs-wait
   stage-1/stage-2 logic, no awareness of the 1pm Eastern cutoff, no
   submission automation, and the real field size still has to be passed in
-  by hand via `--n-rivals`. Marking who actually won or lost each week
+  by hand via `--n-rivals` (or, from Week 5, read from the pool's
+  availability table via `--rival-availability`). Marking who actually won or lost each week
   (`record_result`) is still a manual step, no results feed yet. Verified
   the empty-tracker case (true going into Week 4: every entry alive, no
   used teams) produces byte-for-byte the same recommendation
