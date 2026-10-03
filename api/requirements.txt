@@ -1,0 +1,16 @@
+# Megan's pipeline deps (mirrors pyproject.toml -- kept in sync by hand;
+# if that file changes, update this list too)
+numpy>=1.26
+scipy>=1.11
+pandas>=2.1
+requests>=2.31
+python-dotenv>=1.0
+beautifulsoup4>=4.12
+
+# API + web layer
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sqlalchemy>=2.0
+pydantic>=2.6
+itsdangerous>=2.2    # signs the shared-password login token
+psycopg2-binary>=2.9   # Postgres driver, used only when DATABASE_URL points at Postgres

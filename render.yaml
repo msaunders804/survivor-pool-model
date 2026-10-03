@@ -1,0 +1,58 @@
+# Render blueprint for Phase 9. Three things, one project:
+#   1. Postgres        -- replaces the local SQLite file
+#   2. web service      -- the API Brent's and your browser talk to
+#   3. cron job          -- runs run_weekly_and_ingest.py on a schedule,
+#                           replacing Megan's manual two-command week
+#
+# Deploy: push this repo to GitHub, then on Render: New -> Blueprint,
+# point it at the repo. Render reads this file and creates all three.
+# THE_ODDS_API_KEY, APP_PASSWORD and SECRET_KEY all have to be set by
+# hand in the dashboard after the first deploy -- marked sync: false
+# below so none of them ever ends up in GitHub. APP_PASSWORD is the
+# one shared password the three of you log in with (web/login.html);
+# SECRET_KEY signs the session token -- any random string, set once,
+# never needs to be memorized.
+
+databases:
+  - name: survivor-db
+    plan: free
+    databaseName: survivor
+    user: survivor
+
+services:
+  - type: web
+    name: survivor-api
+    env: python
+    plan: free
+    buildCommand: "pip install -r api/requirements.txt && pip install -e ."
+    startCommand: "cd api && uvicorn app:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: survivor-db
+          property: connectionString
+      - key: APP_PASSWORD
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+
+  - type: cron
+    name: survivor-weekly-job
+    env: python
+    plan: starter
+    buildCommand: "pip install -r api/requirements.txt && pip install -e ."
+    # Saturday 23:00 UTC = 7pm ET on the US mainland, after Brent's
+    # usual Saturday-noon count and well ahead of Sunday 1pm ET kickoffs.
+    # Doesn't account for a week with a Thursday-kickoff pick on the
+    # candidate list -- if that comes up, run the job by hand earlier
+    # that week rather than trusting this schedule, same as any other
+    # odd week (bye weeks, a flexed game, etc).
+    schedule: "0 23 * * 6"
+    startCommand: "python scripts/run_weekly_and_ingest.py --league-id 1 --record"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: survivor-db
+          property: connectionString
+      - key: THE_ODDS_API_KEY
+        sync: false

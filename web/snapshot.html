@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trainò — Week 4 (live snapshot)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0c1020;--panel:#141a2e;--panel-2:#1b2238;--line:#242c46;--line-2:#323c5c;
+  --fg:#e9ecf6;--fg-2:#9aa4c4;--fg-3:#6b7599;--you:#ffb648;--you-dim:#3d2f14;
+  --field:#8190ff;--field-dim:#20264a;--ok:#4fc79a;--out:#e2635a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Archivo,sans-serif;font-size:14px}
+h1,h2{font-family:"Bricolage Grotesque",sans-serif;font-weight:800}
+.wrap{max-width:1000px;margin:0 auto;padding:28px 20px}
+.app{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px}
+.eyebrow{color:var(--fg-3);font-size:12.5px;margin-bottom:6px}
+h1{font-size:30px;margin:0 0 6px}
+.lede{color:var(--fg-2);font-size:13.5px;margin:0 0 20px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:20px}
+.col{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:11px}
+.tm{font-family:"Bricolage Grotesque",sans-serif;font-size:20px;font-weight:800}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
+.chip{width:24px;height:24px;border-radius:8px;display:grid;place-items:center;font-size:10.5px;
+  font-weight:700;background:var(--you);color:#0c1020}
+.side{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:18px;margin-top:16px}
+.big{font-family:"Bricolage Grotesque",sans-serif;font-size:36px;font-weight:800;margin:4px 0}
+.kv{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+.err{color:var(--out)}
+.snaptag{font-size:11px;letter-spacing:.04em;color:var(--fg-3);text-transform:uppercase;margin-bottom:10px}
+.confirmed{color:var(--ok);font-size:10.5px;margin-left:5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="snaptag">LIVE SNAPSHOT — real data from the running API, frozen at fetch time</div>
+  <div class="app" id="app">Loading…</div>
+</div>
+<script>
+const API = "http://localhost:8000";
+const LEAGUE = 1, WEEK = 4;
+
+async function load() {
+  // Snapshot pulled live from http://localhost:8000 in the sandbox that built this —
+  // baked in here only because a published page can't reach that sandbox's localhost.
+  // Run the real app (README.md) to get this live, with an editable picks screen.
+  const rec = {"week": 4, "expected_total_payout": 576.95, "payout_se": 6.77, "picks": [{"entry_id": "entry_1", "team": "MIN", "used_teams_before": []}, {"entry_id": "entry_10", "team": "DET", "used_teams_before": []}, {"entry_id": "entry_2", "team": "BAL", "used_teams_before": []}, {"entry_id": "entry_3", "team": "SEA", "used_teams_before": []}, {"entry_id": "entry_4", "team": "IND", "used_teams_before": []}, {"entry_id": "entry_5", "team": "KC", "used_teams_before": []}, {"entry_id": "entry_6", "team": "BUF", "used_teams_before": []}, {"entry_id": "entry_7", "team": "MIN", "used_teams_before": []}, {"entry_id": "entry_8", "team": "BAL", "used_teams_before": []}, {"entry_id": "entry_9", "team": "GB", "used_teams_before": []}]};
+  const cfg = {"name": "Train\u00f2", "entry_cap": 10, "buy_in": 20.0, "rake_pct": 0.1, "pot": 16840.0, "week_start": 4, "week_end": 18, "n_rivals": 842};
+  const entries = [];
+
+  const byTeam = {};
+  rec.picks.forEach(p => { (byTeam[p.team] ??= []).push(p.entry_id); });
+
+  const confirmedByEntry = {};
+  entries.forEach(e => {
+    const wk = e.picks.find(p => p.week === WEEK);
+    confirmedByEntry[e.entry_id] = wk ? wk.confirmed : false;
+  });
+
+  const cols = Object.entries(byTeam).map(([team, ids]) => `
+    <div class="col">
+      <div class="tm">${team}</div>
+      <div class="chips">${ids.map(id => {
+        const label = id.replace("entry_", "");
+        const c = confirmedByEntry[id] ? '<span class="confirmed">✓</span>' : "";
+        return `<i class="chip">${label}</i>${c}`;
+      }).join("")}</div>
+    </div>`).join("");
+
+  document.getElementById("app").innerHTML = `
+    <div class="eyebrow">${cfg.n_rivals} entries live · $${cfg.pot.toLocaleString()} pot · weeks ${cfg.week_start}–${cfg.week_end}</div>
+    <h1>${Object.keys(byTeam).length} teams, ${rec.picks.length} entries</h1>
+    <p class="lede">${cfg.name} — Week ${WEEK}</p>
+    <div class="cols">${cols}</div>
+    <div class="side">
+      <div class="eyebrow">If you submit this</div>
+      <div class="big">$${rec.expected_total_payout.toFixed(2)}</div>
+      <div class="kv"><span>Standard error</span><b>± $${rec.payout_se.toFixed(2)}</b></div>
+    </div>`;
+}
+
+load().catch(err => {
+  document.getElementById("app").innerHTML =
+    `<p class="err">Couldn't load — is the API running at ${API}? (${err})</p>`;
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trainò — league ownership</title>
+<style>
+:root{--bg:#0c1020;--panel:#141a2e;--panel-2:#1b2238;--line:#242c46;--line-2:#323c5c;
+  --fg:#e9ecf6;--fg-2:#9aa4c4;--fg-3:#6b7599;--you:#ffb648;--you-dim:#3d2f14;
+  --field:#8190ff;--field-dim:#20264a;--ok:#4fc79a;--out:#e2635a}
+*{box-sizing:border-box}
+.pagenav{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+.navbtn{background:var(--panel-2);border:1px solid var(--line);color:var(--fg-2);text-decoration:none;
+  font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px}
+.navbtn:hover{border-color:var(--you);color:var(--you)}
+.navbtn.active{background:var(--you-dim);border-color:var(--you);color:var(--you)}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Archivo,Arial,sans-serif;font-size:14px}
+.wrap{max-width:620px;margin:0 auto;padding:24px 18px}
+.app{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+h1{font-family:"Bricolage Grotesque",sans-serif;font-size:22px;margin:0 0 4px}
+.sub{color:var(--fg-2);font-size:13px;margin:0 0 18px;line-height:1.5}
+label{display:block;font-size:12px;color:var(--fg-3);margin:0 0 6px}
+textarea{width:100%;background:var(--bg);border:1px solid var(--line-2);color:var(--fg);border-radius:9px;
+  padding:10px 12px;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  box-sizing:border-box;min-height:140px;resize:vertical}
+button{background:var(--you);color:#0c1020;border:0;border-radius:8px;padding:10px 18px;
+  font-size:13.5px;font-weight:700;cursor:pointer;margin-top:12px}
+.status{font-size:12.5px;margin-top:10px;min-height:16px}
+.ok{color:var(--ok)} .err{color:var(--out)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:20px}
+th{text-align:left;color:var(--fg-3);font-weight:600;font-size:11.5px;padding:6px 8px 6px 0;
+  border-bottom:1px solid var(--line-2)}
+td{padding:7px 8px 7px 0;border-bottom:1px solid var(--line)}
+td.tm{font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="app">
+    <nav class="pagenav">
+      <a class="navbtn" href="index.html">Board</a>
+      <a class="navbtn" href="picks.html">Picks</a>
+      <a class="navbtn active" href="ownership.html">Ownership</a>
+      <a class="navbtn" href="update.html">This week's numbers</a>
+    </nav>
+    <h1>League ownership — Week <span id="wk"></span></h1>
+    <p class="sub">Paste from Splash's Stats tab — team name, then percentage and/or count, one per line.
+      Handles "Chiefs 39% 948", "KC 948", or just "Chiefs 39%" — whatever's actually on the screen.</p>
+    <label for="raw">Paste here</label>
+    <textarea id="raw" placeholder="Chiefs 39% 948&#10;Seahawks 14% 343&#10;Lions 10% 252"></textarea>
+    <button id="save">Save</button>
+    <div class="status" id="status"></div>
+
+    <table id="results" style="display:none">
+      <thead><tr><th>Team</th><th>Pick %</th><th>Count</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+<script src="auth.js"></script>
+<script>
+requireAuthOrRedirect();
+const LEAGUE = 1, WEEK = 4;
+document.getElementById("wk").textContent = WEEK;
+
+async function loadExisting() {
+  const res = await authedFetch(`/leagues/${LEAGUE}/ownership?week=${WEEK}`);
+  const rows = await res.json();
+  if (rows.length) renderTable(rows);
+}
+
+function renderTable(rows) {
+  rows.sort((a, b) => (b.pick_count ?? b.pct ?? 0) - (a.pick_count ?? a.pct ?? 0));
+  document.getElementById("rows").innerHTML = rows.map(r => `
+    <tr><td class="tm">${r.team}</td><td>${r.pct != null ? r.pct + "%" : "—"}</td>
+    <td>${r.pick_count ?? "—"}</td></tr>`).join("");
+  document.getElementById("results").style.display = "table";
+}
+
+document.getElementById("save").addEventListener("click", async () => {
+  const status = document.getElementById("status");
+  status.textContent = "Saving…"; status.className = "status";
+  try {
+    const res = await authedFetch(`/leagues/${LEAGUE}/ownership`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week: WEEK, raw_text: document.getElementById("raw").value }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    status.textContent = `Saved ${rows.length} teams.`; status.className = "status ok";
+    renderTable(rows);
+  } catch (err) {
+    status.textContent = `Failed: ${err}`; status.className = "status err";
+  }
+});
+
+loadExisting().catch(() => {});
+</script>
+</body>
+</html>

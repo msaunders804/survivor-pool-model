@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trainò — Week 4 picks</title>
+<style>
+:root{--bg:#0c1020;--panel:#141a2e;--panel-2:#1b2238;--line:#242c46;--line-2:#323c5c;
+  --fg:#e9ecf6;--fg-2:#9aa4c4;--fg-3:#6b7599;--you:#ffb648;--you-dim:#3d2f14;
+  --field:#8190ff;--field-dim:#20264a;--ok:#4fc79a;--out:#e2635a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Archivo,Arial,sans-serif;font-size:14px}
+.wrap{max-width:720px;margin:0 auto;padding:24px 18px}
+.app{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+h1{font-family:"Bricolage Grotesque",sans-serif;font-size:22px;margin:0 0 4px}
+.sub{color:var(--fg-2);font-size:13px;margin:0 0 20px}
+.pagenav{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+.navbtn{background:var(--panel-2);border:1px solid var(--line);color:var(--fg-2);text-decoration:none;
+  font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px}
+.navbtn:hover{border-color:var(--you);color:var(--you)}
+.navbtn.active{background:var(--you-dim);border-color:var(--you);color:var(--you)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--fg-3);font-weight:600;font-size:11.5px;padding:6px 8px 6px 0;
+  border-bottom:1px solid var(--line-2)}
+td{padding:9px 8px 9px 0;border-bottom:1px solid var(--line);vertical-align:middle}
+td.e{font-weight:700;white-space:nowrap}
+td.rec{color:var(--fg-3)}
+input[type=text]{width:84px;background:var(--bg);border:1px solid var(--line-2);color:var(--fg);
+  border-radius:7px;padding:6px 8px;font-family:inherit;font-size:13px;text-transform:uppercase}
+input[type=text].changed{border-color:var(--you);color:var(--you)}
+.used{display:block;font-size:10.5px;color:var(--fg-3);margin-top:3px;white-space:nowrap;max-width:140px;
+  overflow:hidden;text-overflow:ellipsis}
+label.cf{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--fg-2);white-space:nowrap}
+.rowsave{background:transparent;border:1px solid var(--line-2);color:var(--fg-2);border-radius:7px;
+  padding:6px 11px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.rowsave:hover{border-color:var(--you);color:var(--you)}
+.rowstatus{font-size:11px;min-height:14px;margin-top:3px}
+.rowstatus.ok{color:var(--ok)} .rowstatus.err{color:var(--out)}
+.note{margin-top:18px;font-size:12px;color:var(--fg-3);line-height:1.5;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="app">
+    <nav class="pagenav">
+      <a class="navbtn" href="index.html">Board</a>
+      <a class="navbtn active" href="picks.html">Picks</a>
+      <a class="navbtn" href="ownership.html">Ownership</a>
+      <a class="navbtn" href="update.html">This week's numbers</a>
+    </nav>
+    <h1>Week 4 picks</h1>
+    <p class="sub">Model's suggestion on the left. Type over it to go a different way — not locked to the recommendation.</p>
+    <table>
+      <thead><tr><th>Entry</th><th>Model says</th><th>Your pick</th><th>On Splash?</th><th></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="5">Loading…</td></tr></tbody>
+    </table>
+    <div class="note">
+      Free-text field, not a dropdown — this doesn't yet check your pick against teams you've already used
+      or which teams are playing this week, so double-check before saving. Validating that against each
+      entry's real history is the next thing to add here.
+    </div>
+  </div>
+</div>
+<script src="auth.js"></script>
+<script>
+requireAuthOrRedirect();
+const LEAGUE = 1, WEEK = 4;
+
+async function load() {
+  const [rec, entries] = await Promise.all([
+    authedFetch(`/leagues/${LEAGUE}/recommendation?week=${WEEK}`).then(r => r.json()),
+    authedFetch(`/leagues/${LEAGUE}/entries`).then(r => r.json()),
+  ]);
+
+  const recByEntry = Object.fromEntries(rec.picks.map(p => [p.entry_id, p]));
+  const entryById = Object.fromEntries(entries.map(e => [e.entry_id, e]));
+
+  const rows = rec.picks.map(p => {
+    const history = entryById[p.entry_id]?.picks ?? [];
+    const thisWeek = history.find(h => h.week === WEEK);
+    const usedBefore = history.filter(h => h.week < WEEK).map(h => h.team);
+    const currentPick = thisWeek ? thisWeek.team : p.team;
+    const currentConfirmed = thisWeek ? thisWeek.confirmed : false;
+    const label = p.entry_id.replace("entry_", "BMJ");
+
+    return `
+      <tr data-entry="${p.entry_id}">
+        <td class="e">${label}</td>
+        <td class="rec">${p.team}</td>
+        <td>
+          <input type="text" class="pick" value="${currentPick}" maxlength="4">
+          ${usedBefore.length ? `<span class="used">used: ${usedBefore.join(", ")}</span>` : ""}
+        </td>
+        <td><label class="cf"><input type="checkbox" class="confirmed" ${currentConfirmed ? "checked" : ""}> on Splash</label></td>
+        <td>
+          <button class="rowsave">Save</button>
+          <div class="rowstatus"></div>
+        </td>
+      </tr>`;
+  }).join("");
+
+  document.getElementById("rows").innerHTML = rows;
+
+  document.querySelectorAll("tr[data-entry]").forEach(tr => {
+    const entryId = tr.dataset.entry;
+    const pickInput = tr.querySelector(".pick");
+    const confirmedInput = tr.querySelector(".confirmed");
+    const status = tr.querySelector(".rowstatus");
+    const original = pickInput.value;
+
+    pickInput.addEventListener("input", () => {
+      pickInput.classList.toggle("changed", pickInput.value.toUpperCase() !== original.toUpperCase());
+    });
+
+    tr.querySelector(".rowsave").addEventListener("click", async () => {
+      status.textContent = "Saving…"; status.className = "rowstatus";
+      try {
+        const res = await authedFetch(`/leagues/${LEAGUE}/picks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            entry_id: entryId,
+            week: WEEK,
+            team: pickInput.value.toUpperCase(),
+            confirmed: confirmedInput.checked,
+          }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        status.textContent = "Saved."; status.className = "rowstatus ok";
+        pickInput.classList.remove("changed");
+      } catch (err) {
+        status.textContent = `Failed: ${err}`; status.className = "rowstatus err";
+      }
+    });
+  });
+}
+
+load().catch(err => {
+  document.getElementById("rows").innerHTML = `<tr><td colspan="5">Couldn't load: ${err}</td></tr>`;
+});
+</script>
+</body>
+</html>

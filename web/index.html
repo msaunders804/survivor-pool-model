@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trainò — Week 4</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0c1020;--panel:#141a2e;--panel-2:#1b2238;--line:#242c46;--line-2:#323c5c;
+  --fg:#e9ecf6;--fg-2:#9aa4c4;--fg-3:#6b7599;--you:#ffb648;--you-dim:#3d2f14;
+  --field:#8190ff;--field-dim:#20264a;--ok:#4fc79a;--out:#e2635a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Archivo,sans-serif;font-size:14px}
+h1,h2{font-family:"Bricolage Grotesque",sans-serif;font-weight:800}
+.wrap{max-width:1000px;margin:0 auto;padding:28px 20px}
+.app{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px}
+.eyebrow{color:var(--fg-3);font-size:12.5px;margin-bottom:6px}
+h1{font-size:30px;margin:0 0 6px}
+.lede{color:var(--fg-2);font-size:13.5px;margin:0 0 20px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:20px}
+.col{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:11px}
+.tm{font-family:"Bricolage Grotesque",sans-serif;font-size:20px;font-weight:800}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
+.chip{width:24px;height:24px;border-radius:8px;display:grid;place-items:center;font-size:10.5px;
+  font-weight:700;background:var(--you);color:#0c1020}
+.side{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:18px;margin-top:16px}
+.big{font-family:"Bricolage Grotesque",sans-serif;font-size:36px;font-weight:800;margin:4px 0}
+.kv{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+.err{color:var(--out)}
+.own{font-size:11px;color:var(--field);margin-top:4px}
+.own.dim{color:var(--fg-3)}
+.confirmed{color:var(--ok);font-size:10.5px;margin-left:5px}
+.pagenav{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+.navbtn{background:var(--panel-2);border:1px solid var(--line);color:var(--fg-2);text-decoration:none;
+  font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px}
+.navbtn:hover{border-color:var(--you);color:var(--you)}
+.navbtn.active{background:var(--you-dim);border-color:var(--you);color:var(--you)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="app">
+    <nav class="pagenav">
+      <a class="navbtn active" href="index.html">Board</a>
+      <a class="navbtn" href="picks.html">Picks</a>
+      <a class="navbtn" href="ownership.html">Ownership</a>
+      <a class="navbtn" href="update.html">This week's numbers</a>
+    </nav>
+    <div id="app">Loading…</div>
+</div>
+<script src="auth.js"></script>
+<script>
+requireAuthOrRedirect();
+const LEAGUE = 1, WEEK = 4;
+
+async function load() {
+  const [rec, cfg, entries, ownership] = await Promise.all([
+    authedFetch(`/leagues/${LEAGUE}/recommendation?week=${WEEK}`).then(r => r.json()),
+    authedFetch(`/leagues/${LEAGUE}/config`).then(r => r.json()),
+    authedFetch(`/leagues/${LEAGUE}/entries`).then(r => r.json()),
+    authedFetch(`/leagues/${LEAGUE}/ownership?week=${WEEK}`).then(r => r.ok ? r.json() : []),
+  ]);
+
+  const ownByTeam = Object.fromEntries(ownership.map(o => [o.team, o]));
+
+  const byTeam = {};
+  rec.picks.forEach(p => { (byTeam[p.team] ??= []).push(p.entry_id); });
+
+  const confirmedByEntry = {};
+  entries.forEach(e => {
+    const wk = e.picks.find(p => p.week === WEEK);
+    confirmedByEntry[e.entry_id] = wk ? wk.confirmed : false;
+  });
+
+  const cols = Object.entries(byTeam).map(([team, ids]) => {
+    const own = ownByTeam[team];
+    const ownLine = own
+      ? `<div class="own">${own.pct != null ? own.pct + "%" : ""}${own.pct != null && own.pick_count != null ? " · " : ""}${own.pick_count != null ? own.pick_count + " picks" : ""} of the league</div>`
+      : `<div class="own dim">league %: not pasted yet</div>`;
+    return `
+    <div class="col">
+      <div class="tm">${team}</div>
+      ${ownLine}
+      <div class="chips">${ids.map(id => {
+        const label = id.replace("entry_", "");
+        const c = confirmedByEntry[id] ? '<span class="confirmed">✓</span>' : "";
+        return `<i class="chip">${label}</i>${c}`;
+      }).join("")}</div>
+    </div>`;
+  }).join("");
+
+  document.getElementById("app").innerHTML = `
+    <div class="eyebrow">${cfg.n_rivals} entries live · $${cfg.pot.toLocaleString()} pot · weeks ${cfg.week_start}–${cfg.week_end}</div>
+    <h1>${Object.keys(byTeam).length} teams, ${rec.picks.length} entries</h1>
+    <p class="lede">${cfg.name} — Week ${WEEK}</p>
+    <div class="cols">${cols}</div>
+    <div class="side">
+      <div class="eyebrow">If you submit this</div>
+      <div class="big">$${rec.expected_total_payout.toFixed(2)}</div>
+      <div class="kv"><span>Standard error</span><b>± $${rec.payout_se.toFixed(2)}</b></div>
+    </div>`;
+}
+
+load().catch(err => {
+  document.getElementById("app").innerHTML =
+    `<p class="err">Couldn't load — is the API running at ${API}? (${err})</p>`;
+});
+</script>
+</body>
+</html>

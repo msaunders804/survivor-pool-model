@@ -6,3 +6,15 @@ venv/
 .pytest_cache/
 data_store/
 .env
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+.next/
+dist/
+.env
+.env.*
+!.env.example
+*.db
+.DS_Store
