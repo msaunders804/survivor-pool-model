@@ -46,6 +46,12 @@ def main() -> None:
             db.add(Entry(league_id=league.id, owner_id=brent.id, entry_id=entry_id))
         db.flush()
 
+        # Brent locked these as the Week 4 picks, so they're the history the Week 5
+        # run needs (used teams). survived stays blank until the result is known.
+        entries = {e.entry_id: e for e in db.query(Entry).filter_by(league_id=league.id)}
+        for entry_id, team in WEEK4_RECOMMENDATION.items():
+            db.add(Pick(entry_id_fk=entries[entry_id].id, week=4, team=team, confirmed=True))
+
         for entry_id, team in WEEK4_RECOMMENDATION.items():
             db.add(
                 Recommendation(

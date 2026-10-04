@@ -71,6 +71,26 @@ def ingest_picks(db, league_id: int, picks_csv_path: Path) -> int:
     return n
 
 
+def export_picks(db, league_id: int, picks_csv_path: Path) -> int:
+    """Write the database's picks out in my_entries' CSV shape, so run_weekly.py
+    sees each entry's real history. The job's disk starts empty every run, so
+    without this it would treat every entry as fresh each week."""
+    rows = (
+        db.query(Entry.entry_id, Pick.week, Pick.team, Pick.survived)
+        .join(Pick, Pick.entry_id_fk == Entry.id)
+        .filter(Entry.league_id == league_id)
+        .order_by(Entry.entry_id, Pick.week)
+        .all()
+    )
+    picks_csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(picks_csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["entry_id", "week", "team", "survived"])
+        for entry_id, week, team, survived in rows:
+            writer.writerow([entry_id, week, team, "" if survived is None else survived])
+    return len(rows)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--league-id", type=int, required=True)

@@ -34,9 +34,21 @@ def main() -> None:
     parser.add_argument("--record", action="store_true", help="also commit picks to data_store/my_entries/")
     args = parser.parse_args()
 
+    sys.path.insert(0, str(REPO_ROOT / "api"))
+    from ingest import export_picks
+    from models import League, SessionLocal, init_db
+
+    init_db()
+    store_root = REPO_ROOT / "data_store"
+    db = SessionLocal()
+    try:
+        # the job's disk is empty each run: restore pick history from the database first
+        n = export_picks(db, args.league_id, store_root / "my_entries" / "picks.csv")
+        print(f"Restored {n} saved picks from the database into data_store/my_entries/.")
+    finally:
+        db.close()
+
     if args.week is None or args.n_rivals is None or args.pot is None:
-        sys.path.insert(0, str(REPO_ROOT / "api"))
-        from models import League, SessionLocal  # local import: only needed on this path
         db = SessionLocal()
         try:
             league = db.get(League, args.league_id)
@@ -74,7 +86,7 @@ def main() -> None:
     ingest_cmd = [
         sys.executable, str(REPO_ROOT / "api" / "ingest.py"),
         "--league-id", str(args.league_id), "--week", str(args.week),
-        "--store-root", str(REPO_ROOT / "data_store"),
+        "--store-root", str(store_root),
         "--payout", payout, "--se", se,
     ]
     print(f"\n$ {' '.join(ingest_cmd)}")
