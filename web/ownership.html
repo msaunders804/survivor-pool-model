@@ -41,6 +41,7 @@ td.tm{font-weight:700}
       <a class="navbtn" href="index.html">Board</a>
       <a class="navbtn" href="picks.html">Picks</a>
       <a class="navbtn active" href="ownership.html">Ownership</a>
+      <a class="navbtn" href="results.html">Results</a>
       <a class="navbtn" href="update.html">This week's numbers</a>
     </nav>
     <h1>League ownership — Week <span id="wk"></span></h1>
@@ -60,10 +61,12 @@ td.tm{font-weight:700}
 <script src="auth.js"></script>
 <script>
 requireAuthOrRedirect();
-const LEAGUE = 1, WEEK = 4;
-document.getElementById("wk").textContent = WEEK;
+const LEAGUE = 1;
+let WEEK = 4;
+const weekReady = getCurrentWeek(LEAGUE).then(w => { WEEK = w; document.getElementById("wk").textContent = w; });
 
 async function loadExisting() {
+  await weekReady;
   const res = await authedFetch(`/leagues/${LEAGUE}/ownership?week=${WEEK}`);
   const rows = await res.json();
   if (rows.length) renderTable(rows);
@@ -78,6 +81,7 @@ function renderTable(rows) {
 }
 
 document.getElementById("save").addEventListener("click", async () => {
+  await weekReady;
   const status = document.getElementById("status");
   status.textContent = "Saving…"; status.className = "status";
   try {

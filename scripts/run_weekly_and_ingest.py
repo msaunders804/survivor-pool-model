@@ -36,17 +36,11 @@ def main() -> None:
 
     sys.path.insert(0, str(REPO_ROOT / "api"))
     from ingest import export_picks
-    from models import League, SessionLocal, init_db
+    from models import League, SessionLocal
+    from seed import seed_if_empty
 
-    init_db()
+    seed_if_empty()
     store_root = REPO_ROOT / "data_store"
-    db = SessionLocal()
-    try:
-        # the job's disk is empty each run: restore pick history from the database first
-        n = export_picks(db, args.league_id, store_root / "my_entries" / "picks.csv")
-        print(f"Restored {n} saved picks from the database into data_store/my_entries/.")
-    finally:
-        db.close()
 
     if args.week is None or args.n_rivals is None or args.pot is None:
         db = SessionLocal()
@@ -61,6 +55,14 @@ def main() -> None:
                   f"(last saved via update.html -- pass --week/--n-rivals/--pot to override)")
         finally:
             db.close()
+
+    db = SessionLocal()
+    try:
+        # the job's disk is empty each run: restore earlier weeks' picks from the database
+        n = export_picks(db, args.league_id, store_root / "my_entries" / "picks.csv", before_week=args.week)
+        print(f"Restored {n} saved picks (weeks before {args.week}) from the database.")
+    finally:
+        db.close()
 
     run_weekly_cmd = [
         sys.executable, str(REPO_ROOT / "scripts" / "run_weekly.py"),

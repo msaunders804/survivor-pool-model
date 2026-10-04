@@ -19,6 +19,20 @@ PAYOUT_SE = 6.77
 ENTRY_LABELS = {f"entry_{i+1}": f"BMJ{i+1}" for i in range(10)}
 
 
+def seed_if_empty() -> bool:
+    """Seed only when there's no league yet, so it's safe to call on every
+    boot (web service) and every weekly run. Returns True if it seeded."""
+    init_db()
+    db = SessionLocal()
+    try:
+        if db.query(League).count() > 0:
+            return False
+    finally:
+        db.close()
+    main()
+    return True
+
+
 def main() -> None:
     init_db()
     db = SessionLocal()

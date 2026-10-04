@@ -27,3 +27,9 @@ async function authedFetch(path, options = {}) {
   }
   return res;
 }
+
+// The league's current week, set on update.html. Pages use this instead of a hardcoded week.
+async function getCurrentWeek(league) {
+  const res = await authedFetch(`/leagues/${league}/config`);
+  return (await res.json()).current_week;
+}
