@@ -14,6 +14,12 @@ WEEK4_RECOMMENDATION = {
     "entry_5": "KC", "entry_6": "BUF", "entry_7": "MIN", "entry_8": "BAL",
     "entry_9": "GB", "entry_10": "DET",
 }
+# What was actually entered for Week 5 (BMJ6 and BMJ10 have none: they lost in Week 4).
+# Keyed by the app's entry ids: entry_N is BMJ<N>.
+WEEK5_PICKS = {
+    "entry_1": "DET", "entry_2": "PIT", "entry_3": "DEN", "entry_4": "NE",
+    "entry_5": "CIN", "entry_7": "HOU", "entry_8": "JAX", "entry_9": "DAL",
+}
 EXPECTED_PAYOUT = 576.95
 PAYOUT_SE = 6.77
 ENTRY_LABELS = {f"entry_{i+1}": f"BMJ{i+1}" for i in range(10)}
@@ -45,7 +51,7 @@ def main() -> None:
 
         league = League(
             name="Trainò", created_by=brent.id, entry_cap=10, buy_in=20.0,
-            rake_pct=0.10, pot=16_840.0, week_start=4, week_end=18, n_rivals=842,
+            rake_pct=0.10, pot=16_840.0, week_start=4, week_end=18, n_rivals=842, current_week=5,
         )
         db.add(league)
         db.flush()
@@ -64,7 +70,11 @@ def main() -> None:
         # run needs (used teams). survived stays blank until the result is known.
         entries = {e.entry_id: e for e in db.query(Entry).filter_by(league_id=league.id)}
         for entry_id, team in WEEK4_RECOMMENDATION.items():
-            db.add(Pick(entry_id_fk=entries[entry_id].id, week=4, team=team, confirmed=True))
+            # an entry with a Week 5 pick won Week 4; the two without one lost
+            db.add(Pick(entry_id_fk=entries[entry_id].id, week=4, team=team, confirmed=True,
+                        survived=entry_id in WEEK5_PICKS))
+        for entry_id, team in WEEK5_PICKS.items():
+            db.add(Pick(entry_id_fk=entries[entry_id].id, week=5, team=team, confirmed=True))
 
         for entry_id, team in WEEK4_RECOMMENDATION.items():
             db.add(
