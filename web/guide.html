@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trainò — Guide</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💸%3C/text%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0c1020;--panel:#141a2e;--panel-2:#1b2238;--line:#242c46;--line-2:#323c5c;
+  --fg:#e9ecf6;--fg-2:#9aa4c4;--fg-3:#6b7599;--you:#ffb648;--you-dim:#3d2f14;
+  --field:#8190ff;--field-dim:#20264a;--ok:#4fc79a;--out:#e2635a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Archivo,Arial,sans-serif;font-size:14px;line-height:1.55}
+.wrap{max-width:720px;margin:0 auto;padding:24px 18px}
+.app{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px}
+h1,h2{font-family:"Bricolage Grotesque",sans-serif;font-weight:800}
+h1{font-size:26px;margin:0 0 6px}
+h2{font-size:17px;margin:28px 0 8px}
+.sub{color:var(--fg-2);margin:0 0 6px}
+.pagenav{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+.navbtn{background:var(--panel-2);border:1px solid var(--line);color:var(--fg-2);text-decoration:none;
+  font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px}
+.navbtn:hover{border-color:var(--you);color:var(--you)}
+.navbtn.active{background:var(--you-dim);border-color:var(--you);color:var(--you)}
+.steps{list-style:none;margin:0;padding:0}
+.steps li{display:grid;grid-template-columns:76px 1fr;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.steps li:first-child{border-top:none}
+.when{font-weight:700;color:var(--you);font-size:13px}
+.steps b{color:var(--fg)}
+.steps .who{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;padding:1px 8px;border-radius:99px;background:var(--field-dim);color:var(--field)}
+.steps p{margin:3px 0 0;color:var(--fg-2)}
+.card{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-top:10px}
+.card b{display:block;margin-bottom:2px}
+.card p{margin:0;color:var(--fg-2)}
+.card a{color:var(--you)}
+ul.plain{margin:6px 0 0;padding-left:20px;color:var(--fg-2)}
+ul.plain li{margin:4px 0}
+@media (max-width:520px){.wrap{padding:12px 10px}.app{padding:16px}.steps li{grid-template-columns:1fr;gap:2px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="app">
+    <nav class="pagenav">
+      <a class="navbtn" href="index.html">Board</a>
+      <a class="navbtn" href="picks.html">Picks</a>
+      <a class="navbtn" href="ownership.html">Ownership</a>
+      <a class="navbtn" href="results.html">Results</a>
+      <a class="navbtn" href="update.html">This week's numbers</a>
+      <a class="navbtn active" href="guide.html">Guide</a>
+    </nav>
+
+    <h1>How this works</h1>
+    <p class="sub">The model suggests which team to pick for each of your entries each week. This app shows the plan and keeps track of what you've actually picked, so next week's plan knows which teams are already used.</p>
+
+    <h2>The weekly routine</h2>
+    <ol class="steps">
+      <li><span class="when">Mon night</span><div><b>Games finish.</b><p>Last week's results are final once Monday's game is done.</p></div></li>
+      <li><span class="when">Tuesday</span><div>
+        <b>Mark last week's results <span class="who">Results page</span></b>
+        <p>Set each pick to Won or Lost. A lost pick knocks that entry out, and the model stops planning for it.</p>
+        <b style="margin-top:10px">Update the numbers <span class="who">This week's numbers</span></b>
+        <p>Set the new week, the entries still alive in the pool (from Splash), and the pot. The model reads these when it runs.</p>
+        <b style="margin-top:10px">Paste the league percentages <span class="who">Ownership page</span></b>
+        <p>Paste from Splash's Stats tab. For now this only shows on the Board. The model doesn't use it yet.</p>
+      </div></li>
+      <li><span class="when">Wed noon ET</span><div><b>The model runs by itself.</b><p>It takes a minute or two. Refresh the Board afterwards for the new plan and expected payout. It runs before Thursday night's game so a Thursday pick is possible. It's 11am ET after daylight saving ends on Nov 1.</p></div></li>
+      <li><span class="when">Wed–Sun</span><div><b>Enter your picks on Splash, then record them <span class="who">Picks page</span></b>
+        <p>Type each pick and tick "on Splash" once it's entered. Saving here is what tells next week's run which teams you've used. A pick you save is never overwritten by the model.</p></div></li>
+      <li><span class="when">Before games</span><div><b>Want fresher odds?</b><p>The Wednesday plan uses Wednesday's odds. To refresh it closer to kickoff, ask whoever manages Render to click “Trigger Run” on the weekly job.</p></div></li>
+    </ol>
+
+    <h2>What each page does</h2>
+    <div class="card"><b>Board</b><p>The model's recommended picks, grouped by team, with its expected payout. Open “Entered vs. the model” to compare with what's actually entered.</p></div>
+    <div class="card"><b>Picks</b><p>Enter or change each entry's pick for this week, and mark when it's on Splash.</p></div>
+    <div class="card"><b>Ownership</b><p>Paste the league's pick percentages from Splash's Stats tab.</p></div>
+    <div class="card"><b>Results</b><p>Mark each past pick Won or Lost. Entries with a loss show as “Out.”</p></div>
+    <div class="card"><b>This week's numbers</b><p>The current week, the entries still alive, and the pot. The model uses these.</p></div>
+
+    <h2>Good to know</h2>
+    <ul class="plain">
+      <li><b>The model's picks are suggestions.</b> You can enter something different. The Board shows how many entered picks differ.</li>
+      <li><b>If you forget to save a pick,</b> the model's suggestion is saved for you as that entry's pick when it runs, so teams you've used don't get forgotten. Check the Picks page if you went a different way.</li>
+      <li><b>A tie counts as a loss.</b></li>
+      <li><b>The first page load can be slow</b> (up to about 30 seconds) if nobody has used the app for a while.</li>
+      <li><b>If the Board says “no model recommendation yet,”</b> the weekly run hasn't happened for the current week. Check that the week on “This week's numbers” is right.</li>
+      <li><b>Login:</b> one shared password for everyone. Ask Jaclyn if you've lost it.</li>
+    </ul>
+  </div>
+</div>
+<script src="auth.js"></script>
+<script>requireAuthOrRedirect();</script>
+</body>
+</html>
