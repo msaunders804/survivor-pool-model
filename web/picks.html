@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Trainò — Week 4 picks</title>
+<title>Trainò — Picks</title>
 <style>
 :root{--bg:#0c1020;--panel:#141a2e;--panel-2:#1b2238;--line:#242c46;--line-2:#323c5c;
   --fg:#e9ecf6;--fg-2:#9aa4c4;--fg-3:#6b7599;--you:#ffb648;--you-dim:#3d2f14;
@@ -46,9 +46,10 @@ label.cf{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--fg
       <a class="navbtn" href="index.html">Board</a>
       <a class="navbtn active" href="picks.html">Picks</a>
       <a class="navbtn" href="ownership.html">Ownership</a>
+      <a class="navbtn" href="results.html">Results</a>
       <a class="navbtn" href="update.html">This week's numbers</a>
     </nav>
-    <h1>Week 4 picks</h1>
+    <h1 id="h1">Picks</h1>
     <p class="sub">Model's suggestion on the left. Type over it to go a different way — not locked to the recommendation.</p>
     <table>
       <thead><tr><th>Entry</th><th>Model says</th><th>Your pick</th><th>On Splash?</th><th></th></tr></thead>
@@ -64,14 +65,21 @@ label.cf{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--fg
 <script src="auth.js"></script>
 <script>
 requireAuthOrRedirect();
-const LEAGUE = 1, WEEK = 4;
+const LEAGUE = 1;
+let WEEK = 4;
 
 async function load() {
-  const [rec, entries] = await Promise.all([
-    authedFetch(`/leagues/${LEAGUE}/recommendation?week=${WEEK}`).then(r => r.json()),
+  WEEK = await getCurrentWeek(LEAGUE);
+  document.getElementById("h1").textContent = `Week ${WEEK} picks`;
+  const [recRaw, entries] = await Promise.all([
+    authedFetch(`/leagues/${LEAGUE}/recommendation?week=${WEEK}`).then(r => r.ok ? r.json() : null),
     authedFetch(`/leagues/${LEAGUE}/entries`).then(r => r.json()),
   ]);
 
+  // No model run for this week yet: list every entry that's still alive, with no suggestion.
+  const rec = recRaw ?? {
+    picks: entries.filter(e => !e.picks.some(p => p.survived === false)).map(e => ({ entry_id: e.entry_id, team: "—" })),
+  };
   const recByEntry = Object.fromEntries(rec.picks.map(p => [p.entry_id, p]));
   const entryById = Object.fromEntries(entries.map(e => [e.entry_id, e]));
 
@@ -79,7 +87,7 @@ async function load() {
     const history = entryById[p.entry_id]?.picks ?? [];
     const thisWeek = history.find(h => h.week === WEEK);
     const usedBefore = history.filter(h => h.week < WEEK).map(h => h.team);
-    const currentPick = thisWeek ? thisWeek.team : p.team;
+    const currentPick = thisWeek ? thisWeek.team : (p.team === "—" ? "" : p.team);
     const currentConfirmed = thisWeek ? thisWeek.confirmed : false;
     const label = p.entry_id.replace("entry_", "BMJ");
 

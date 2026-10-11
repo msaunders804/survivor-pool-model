@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from seed import seed_if_empty
 from auth import check_password, issue_token, require_auth
 from models import Entry, League, Ownership, Pick, Recommendation, SessionLocal, init_db
 
@@ -50,6 +51,7 @@ PROTECTED = [Depends(require_auth)]  # pass as dependencies=PROTECTED on every /
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    seed_if_empty()  # first boot on a fresh database: create the league and entries
 
 
 def db_session():
@@ -170,6 +172,31 @@ def save_pick(league_id: int, body: SavePickIn):
             db.add(pick)
         pick.team = body.team
         pick.confirmed = body.confirmed
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+class ResultIn(BaseModel):
+    entry_id: str
+    week: int
+    survived: bool | None = None  # None = back to pending
+
+
+@app.post("/leagues/{league_id}/results", dependencies=PROTECTED)
+def save_result(league_id: int, body: ResultIn):
+    """Mark whether an entry's pick won (survived) or lost that week. The
+    weekly job reads this back: an entry with a loss is dropped from planning."""
+    db = SessionLocal()
+    try:
+        entry = db.query(Entry).filter_by(league_id=league_id, entry_id=body.entry_id).one_or_none()
+        if entry is None:
+            raise HTTPException(404, f"entry {body.entry_id!r} not found in league {league_id}")
+        pick = db.query(Pick).filter_by(entry_id_fk=entry.id, week=body.week).one_or_none()
+        if pick is None:
+            raise HTTPException(404, f"no pick saved for {body.entry_id!r} in week {body.week}")
+        pick.survived = body.survived
         db.commit()
         return {"ok": True}
     finally:

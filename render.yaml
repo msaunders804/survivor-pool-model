@@ -41,13 +41,11 @@ services:
     env: python
     plan: starter
     buildCommand: "pip install -r api/requirements.txt && pip install -e ."
-    # Saturday 23:00 UTC = 7pm ET on the US mainland, after Brent's
-    # usual Saturday-noon count and well ahead of Sunday 1pm ET kickoffs.
-    # Doesn't account for a week with a Thursday-kickoff pick on the
-    # candidate list -- if that comes up, run the job by hand earlier
-    # that week rather than trusting this schedule, same as any other
-    # odd week (bye weeks, a flexed game, etc).
-    schedule: "0 23 * * 6"
+    # Wednesday 16:00 UTC = noon ET (11am after daylight saving ends Nov 1). Week N-1's games
+    # (Monday night) are done and Brent's Tuesday availability report is in, so the plan is
+    # ready before Thursday-night kickoffs. Before this runs: mark last week's results, set the
+    # current week, and update entries/pot in the app. Rerun by hand closer to Sunday if wanted.
+    schedule: "0 16 * * 3"
     startCommand: "timeout 1800 python scripts/run_weekly_and_ingest.py --league-id 1 --record"
     envVars:
       - key: DATABASE_URL

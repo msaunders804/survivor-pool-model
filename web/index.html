@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Trainò — Week 4</title>
+<title>Trainò — Board</title>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#0c1020;--panel:#141a2e;--panel-2:#1b2238;--line:#242c46;--line-2:#323c5c;
@@ -44,6 +44,7 @@ h1{font-size:30px;margin:0 0 6px}
       <a class="navbtn active" href="index.html">Board</a>
       <a class="navbtn" href="picks.html">Picks</a>
       <a class="navbtn" href="ownership.html">Ownership</a>
+      <a class="navbtn" href="results.html">Results</a>
       <a class="navbtn" href="update.html">This week's numbers</a>
     </nav>
     <div id="app">Loading…</div>
@@ -51,15 +52,25 @@ h1{font-size:30px;margin:0 0 6px}
 <script src="auth.js"></script>
 <script>
 requireAuthOrRedirect();
-const LEAGUE = 1, WEEK = 4;
+const LEAGUE = 1;
+let WEEK = 4;
 
 async function load() {
-  const [rec, cfg, entries, ownership] = await Promise.all([
-    authedFetch(`/leagues/${LEAGUE}/recommendation?week=${WEEK}`).then(r => r.json()),
+  WEEK = await getCurrentWeek(LEAGUE);
+  const [recRaw, cfg, entries, ownership] = await Promise.all([
+    authedFetch(`/leagues/${LEAGUE}/recommendation?week=${WEEK}`).then(r => r.ok ? r.json() : null),
     authedFetch(`/leagues/${LEAGUE}/config`).then(r => r.json()),
     authedFetch(`/leagues/${LEAGUE}/entries`).then(r => r.json()),
     authedFetch(`/leagues/${LEAGUE}/ownership?week=${WEEK}`).then(r => r.ok ? r.json() : []),
   ]);
+
+  // No model run for this week yet: show the picks that were entered instead.
+  const noRec = !recRaw;
+  const rec = recRaw ?? {
+    expected_total_payout: null, payout_se: null,
+    picks: entries.filter(e => e.picks.some(p => p.week === WEEK))
+                  .map(e => ({ entry_id: e.entry_id, team: e.picks.find(p => p.week === WEEK).team })),
+  };
 
   const ownByTeam = Object.fromEntries(ownership.map(o => [o.team, o]));
 
@@ -92,7 +103,7 @@ async function load() {
   document.getElementById("app").innerHTML = `
     <div class="eyebrow">${cfg.n_rivals} entries live · $${cfg.pot.toLocaleString()} pot · weeks ${cfg.week_start}–${cfg.week_end}</div>
     <h1>${Object.keys(byTeam).length} teams, ${rec.picks.length} entries</h1>
-    <p class="lede">${cfg.name} — Week ${WEEK}</p>
+    <p class="lede">${cfg.name} — Week ${WEEK}${noRec ? " · picks entered, no model recommendation yet" : ""}</p>
     <div class="cols">${cols}</div>
     <div class="side">
       <div class="eyebrow">If you submit this</div>
