@@ -39,14 +39,14 @@
     if (nav) {
       var bar = document.createElement("div");
       bar.className = "masthead";
-      bar.innerHTML = '<a class="wordmark" href="index.html">Trainò<span>.</span></a>';
+      bar.innerHTML = '<a class="wordmark" href="index.html">Survivor <span>Pool</span></a>';
       bar.appendChild(makeToggle());
       nav.parentNode.insertBefore(bar, nav);
     }
     var login = document.querySelector("body.login .card");
     if (login) {
       var w = document.createElement("a");
-      w.className = "wordmark"; w.href = "#"; w.innerHTML = "Trainò<span>.</span>";
+      w.className = "wordmark"; w.href = "#"; w.innerHTML = "Survivor <span>Pool</span>";
       var h = login.querySelector("h1");
       if (h) h.replaceWith(w); else login.insertBefore(w, login.firstChild);
       var tb = makeToggle();
