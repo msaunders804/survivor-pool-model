@@ -3,39 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Trainò — Board</title>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-:root{--bg:#0c1020;--panel:#141a2e;--panel-2:#1b2238;--line:#242c46;--line-2:#323c5c;
-  --fg:#e9ecf6;--fg-2:#9aa4c4;--fg-3:#6b7599;--you:#ffb648;--you-dim:#3d2f14;
-  --field:#8190ff;--field-dim:#20264a;--ok:#4fc79a;--out:#e2635a}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font-family:Archivo,sans-serif;font-size:14px}
-h1,h2{font-family:"Bricolage Grotesque",sans-serif;font-weight:800}
-.wrap{max-width:1000px;margin:0 auto;padding:28px 20px}
-.app{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px}
-.eyebrow{color:var(--fg-3);font-size:12.5px;margin-bottom:6px}
-h1{font-size:30px;margin:0 0 6px}
-.lede{color:var(--fg-2);font-size:13.5px;margin:0 0 20px}
-.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:20px}
-.col{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:11px}
-.tm{font-family:"Bricolage Grotesque",sans-serif;font-size:20px;font-weight:800}
-.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
-.chip{width:24px;height:24px;border-radius:8px;display:grid;place-items:center;font-size:10.5px;
-  font-weight:700;background:var(--you);color:#0c1020}
-.side{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:18px;margin-top:16px}
-.big{font-family:"Bricolage Grotesque",sans-serif;font-size:36px;font-weight:800;margin:4px 0}
-.kv{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
-.err{color:var(--out)}
-.own{font-size:11px;color:var(--field);margin-top:4px}
-.own.dim{color:var(--fg-3)}
-.confirmed{color:var(--ok);font-size:10.5px;margin-left:5px}
-.pagenav{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
-.navbtn{background:var(--panel-2);border:1px solid var(--line);color:var(--fg-2);text-decoration:none;
-  font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px}
-.navbtn:hover{border-color:var(--you);color:var(--you)}
-.navbtn.active{background:var(--you-dim);border-color:var(--you);color:var(--you)}
-</style>
+<title>Survivor Pool — Board</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💸%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="theme.css">
 </head>
 <body>
 <div class="wrap">
@@ -46,6 +19,7 @@ h1{font-size:30px;margin:0 0 6px}
       <a class="navbtn" href="ownership.html">Ownership</a>
       <a class="navbtn" href="results.html">Results</a>
       <a class="navbtn" href="update.html">This week's numbers</a>
+      <a class="navbtn" href="guide.html">Guide</a>
     </nav>
     <div id="app">Loading…</div>
 </div>
@@ -93,23 +67,68 @@ async function load() {
       <div class="tm">${team}</div>
       ${ownLine}
       <div class="chips">${ids.map(id => {
-        const label = id.replace("entry_", "");
-        const c = confirmedByEntry[id] ? '<span class="confirmed">✓</span>' : "";
-        return `<i class="chip">${label}</i>${c}`;
+        return `<i class="chip">${id.replace("entry_", "BMJ")}</i>`;
       }).join("")}</div>
     </div>`;
   }).join("");
 
+  // --- compare what was entered with what the model recommends ---
+  const modelByEntry = Object.fromEntries(rec.picks.map(p => [p.entry_id, p.team]));
+  const enteredByEntry = {};
+  const outEntries = new Set();
+  entries.forEach(e => {
+    const wk = e.picks.find(p => p.week === WEEK);
+    if (wk) enteredByEntry[e.entry_id] = wk.team;
+    if (e.picks.some(p => p.survived === false)) outEntries.add(e.entry_id);
+  });
+  const aliveIds = entries.map(e => e.entry_id).filter(id => !outEntries.has(id));
+  const label = id => id.replace("entry_", "BMJ");
+
+  const cmpRows = aliveIds.map(id => {
+    const entered = enteredByEntry[id], model = modelByEntry[id];
+    let tag;
+    if (!entered) tag = '<span class="tag none">Not entered</span>';
+    else if (noRec || !model) tag = '<span class="tag none">No model pick</span>';
+    else if (entered === model) tag = '<span class="tag same">Matches</span>';
+    else tag = '<span class="tag diff">Differs</span>';
+    return `<tr><td class="e">${label(id)}</td>
+      <td>${entered ?? '<span class="dimtxt">—</span>'}${confirmedByEntry[id] ? ' <span class="confirmed" title="Entered on Splash">✓</span>' : ""}</td>
+      <td>${model ?? '<span class="dimtxt">—</span>'}</td><td>${tag}</td></tr>`;
+  }).join("");
+
+  const enteredIds = aliveIds.filter(id => enteredByEntry[id]);
+  const differing = enteredIds.filter(id => modelByEntry[id] && modelByEntry[id] !== enteredByEntry[id]).length;
+  const diffSummary = noRec ? `${enteredIds.length} picks entered`
+    : differing === 0 ? `all ${enteredIds.length} entered picks match`
+    : `${differing} of ${enteredIds.length} entered picks differ`;
+
   document.getElementById("app").innerHTML = `
-    <div class="eyebrow">${cfg.n_rivals} entries live · $${cfg.pot.toLocaleString()} pot · weeks ${cfg.week_start}–${cfg.week_end}</div>
-    <h1>${Object.keys(byTeam).length} teams, ${rec.picks.length} entries</h1>
-    <p class="lede">${cfg.name} — Week ${WEEK}${noRec ? " · picks entered, no model recommendation yet" : ""}</p>
+    <h1>Week ${WEEK}</h1>
+    <p class="lede">${noRec ? "Picks entered · no model recommendation yet" : "The model’s recommended picks for your live entries"}</p>
+    <div class="stats">
+      <div class="stat"><div class="k">Your entries alive</div><div class="v">${aliveIds.length}<small> / ${entries.length}</small></div></div>
+      <div class="stat"><div class="k">Pool field</div><div class="v">${cfg.n_rivals.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">Pot</div><div class="v">$${cfg.pot.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">Pool weeks</div><div class="v">${cfg.week_start}–${cfg.week_end}</div></div>
+    </div>
+
+    <h2>${noRec ? "Picks by team" : "Model's recommendation by team"}</h2>
+    <p class="hint">${noRec ? "The teams you entered." : "How the model would spread your entries across teams."}</p>
     <div class="cols">${cols}</div>
     <div class="side">
-      <div class="eyebrow">If you submit this</div>
+      <div class="eyebrow">Model's expected payout</div>
       <div class="big">${rec.expected_total_payout != null ? "$" + rec.expected_total_payout.toFixed(2) : "—"}</div>
       <div class="kv"><span>Standard error</span><b>${rec.payout_se != null ? "± $" + rec.payout_se.toFixed(2) : "—"}</b></div>
-    </div>`;
+      <div class="sub">${noRec ? "Shows once the weekly job has run." : "For the model's picks above, not necessarily the ones entered. Update the field size and pot under “This week's numbers” for a current estimate."}</div>
+    </div>
+    <details class="cmpbox">
+      <summary>Entered vs. the model <span class="dimtxt">· ${diffSummary}</span></summary>
+      <p class="hint">What's been picked for each live entry, next to what the model recommends. ✓ = entered on Splash.</p>
+      <div class="tablewrap"><table class="cmp">
+        <thead><tr><th>Entry</th><th>Entered</th><th>Model says</th><th></th></tr></thead>
+        <tbody>${cmpRows}</tbody>
+      </table></div>
+    </details>`;
 }
 
 load().catch(err => {
