@@ -57,12 +57,20 @@ let WEEK = 4;
 
 async function load() {
   WEEK = await getCurrentWeek(LEAGUE);
-  const [rec, cfg, entries, ownership] = await Promise.all([
-    authedFetch(`/leagues/${LEAGUE}/recommendation?week=${WEEK}`).then(r => r.json()),
+  const [recRaw, cfg, entries, ownership] = await Promise.all([
+    authedFetch(`/leagues/${LEAGUE}/recommendation?week=${WEEK}`).then(r => r.ok ? r.json() : null),
     authedFetch(`/leagues/${LEAGUE}/config`).then(r => r.json()),
     authedFetch(`/leagues/${LEAGUE}/entries`).then(r => r.json()),
     authedFetch(`/leagues/${LEAGUE}/ownership?week=${WEEK}`).then(r => r.ok ? r.json() : []),
   ]);
+
+  // No model run for this week yet: show the picks that were entered instead.
+  const noRec = !recRaw;
+  const rec = recRaw ?? {
+    expected_total_payout: null, payout_se: null,
+    picks: entries.filter(e => e.picks.some(p => p.week === WEEK))
+                  .map(e => ({ entry_id: e.entry_id, team: e.picks.find(p => p.week === WEEK).team })),
+  };
 
   const ownByTeam = Object.fromEntries(ownership.map(o => [o.team, o]));
 
@@ -95,7 +103,7 @@ async function load() {
   document.getElementById("app").innerHTML = `
     <div class="eyebrow">${cfg.n_rivals} entries live · $${cfg.pot.toLocaleString()} pot · weeks ${cfg.week_start}–${cfg.week_end}</div>
     <h1>${Object.keys(byTeam).length} teams, ${rec.picks.length} entries</h1>
-    <p class="lede">${cfg.name} — Week ${WEEK}</p>
+    <p class="lede">${cfg.name} — Week ${WEEK}${noRec ? " · picks entered, no model recommendation yet" : ""}</p>
     <div class="cols">${cols}</div>
     <div class="side">
       <div class="eyebrow">If you submit this</div>
