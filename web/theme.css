@@ -2,37 +2,37 @@
    unless the toggle has set a choice (theme.js sets data-theme on <html>). */
 
 :root{
-  --bg:#f3efe6; --panel:#fbf9f4; --panel-2:#f0ebdf;
-  --line:#e0d9ca; --line-2:#cfc7b5;
-  --fg:#1d1b17; --fg-2:#5b574d; --fg-3:#8b8575;
-  --you:#8a6212; --you-dim:#f1e5c8; --on-you:#fbf9f4;
-  --field:#44627d; --field-dim:#dfe7ee;
-  --ok:#1f6a4b; --ok-dim:#d9eadf; --out:#a63a2e; --out-dim:#f3dad5;
-  --shadow:0 1px 2px rgba(40,32,10,.05),0 8px 28px rgba(40,32,10,.06);
+  --bg:#eef2ef; --panel:#ffffff; --panel-2:#f4f7f5;
+  --line:#e0e6e2; --line-2:#c9d2cd;
+  --fg:#0e1a13; --fg-2:#44514a; --fg-3:#76837b;
+  --you:#14733f; --you-dim:#dcf0e4; --on-you:#ffffff;
+  --field:#33607f; --field-dim:#e0ebf2;
+  --ok:#14733f; --ok-dim:#dcf0e4; --out:#c0392b; --out-dim:#f8e1de;
+  --shadow:0 1px 2px rgba(10,30,20,.05),0 8px 28px rgba(10,30,20,.07);
   --serif:"Barlow Condensed","Arial Narrow",Impact,sans-serif;
   --sans:"Barlow","Helvetica Neue",Arial,sans-serif;
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --bg:#0f1013; --panel:#16171b; --panel-2:#1c1d22;
-    --line:#272830; --line-2:#363843;
-    --fg:#eeeae0; --fg-2:#aaa597; --fg-3:#767264;
-    --you:#d9ad55; --you-dim:#2f2713; --on-you:#14120b;
-    --field:#8fb0cc; --field-dim:#1b2630;
-    --ok:#6cc29b; --ok-dim:#14281f; --out:#e0786b; --out-dim:#2e1a17;
-    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+    --bg:#0a0e0c; --panel:#111714; --panel-2:#171f1b;
+    --line:#222c27; --line-2:#303f38;
+    --fg:#edf3ee; --fg-2:#a2afa8; --fg-3:#6e7c74;
+    --you:#3fcf80; --you-dim:#12301f; --on-you:#06130b;
+    --field:#8db7d6; --field-dim:#172733;
+    --ok:#3fcf80; --ok-dim:#12301f; --out:#ef7b6e; --out-dim:#331a17;
+    --shadow:0 1px 2px rgba(0,0,0,.45),0 10px 30px rgba(0,0,0,.4);
     color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#0f1013; --panel:#16171b; --panel-2:#1c1d22;
-  --line:#272830; --line-2:#363843;
-  --fg:#eeeae0; --fg-2:#aaa597; --fg-3:#767264;
-  --you:#d9ad55; --you-dim:#2f2713; --on-you:#14120b;
-  --field:#8fb0cc; --field-dim:#1b2630;
-  --ok:#6cc29b; --ok-dim:#14281f; --out:#e0786b; --out-dim:#2e1a17;
-  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+  --bg:#0a0e0c; --panel:#111714; --panel-2:#171f1b;
+  --line:#222c27; --line-2:#303f38;
+  --fg:#edf3ee; --fg-2:#a2afa8; --fg-3:#6e7c74;
+  --you:#3fcf80; --you-dim:#12301f; --on-you:#06130b;
+  --field:#8db7d6; --field-dim:#172733;
+  --ok:#3fcf80; --ok-dim:#12301f; --out:#ef7b6e; --out-dim:#331a17;
+  --shadow:0 1px 2px rgba(0,0,0,.45),0 10px 30px rgba(0,0,0,.4);
   color-scheme:dark;
 }
 
