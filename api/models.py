@@ -29,6 +29,12 @@ from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 # pointing at Postgres, so this default only matters for local dev.
 _LOCAL_DB_PATH = Path(__file__).resolve().parent / "survivor.db"
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{_LOCAL_DB_PATH}")
+# Render hands over "postgresql://..." (older tools say "postgres://"). Recent SQLAlchemy
+# reads a bare "postgresql://" as the psycopg (v3) driver, but requirements.txt installs
+# psycopg2, so name it explicitly.
+for _prefix in ("postgres://", "postgresql://"):
+    if DATABASE_URL.startswith(_prefix):
+        DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len(_prefix):]
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
