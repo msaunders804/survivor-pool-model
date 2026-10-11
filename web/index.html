@@ -55,6 +55,11 @@ table.cmp td.e{font-weight:700;white-space:nowrap}
 .tag.none{background:var(--field-dim);color:var(--field)} .tag.out{background:#3b1a18;color:var(--out)}
 .dimtxt{color:var(--fg-3)}
 .side .sub{color:var(--fg-3);font-size:12px;margin-top:8px;line-height:1.45}
+details.cmpbox{margin-top:18px;border:1px solid var(--line);border-radius:11px;padding:0 14px;background:var(--panel-2)}
+details.cmpbox summary{cursor:pointer;padding:12px 0;font-weight:700;font-size:13.5px;list-style:none}
+details.cmpbox summary::-webkit-details-marker{display:none}
+details.cmpbox summary::before{content:"▸ ";color:var(--fg-3)} details.cmpbox[open] summary::before{content:"▾ "}
+details.cmpbox .hint{margin-top:0} details.cmpbox .tablewrap{margin-bottom:14px}
 @media (max-width:520px){
   .wrap{padding:12px 10px} .app{padding:16px} h1{font-size:24px}
   .navbtn{padding:6px 9px;font-size:12px} .big{font-size:30px}
@@ -147,6 +152,12 @@ async function load() {
       <td>${model ?? '<span class="dimtxt">—</span>'}</td><td>${tag}</td></tr>`;
   }).join("");
 
+  const enteredIds = aliveIds.filter(id => enteredByEntry[id]);
+  const differing = enteredIds.filter(id => modelByEntry[id] && modelByEntry[id] !== enteredByEntry[id]).length;
+  const diffSummary = noRec ? `${enteredIds.length} picks entered`
+    : differing === 0 ? `all ${enteredIds.length} entered picks match`
+    : `${differing} of ${enteredIds.length} entered picks differ`;
+
   document.getElementById("app").innerHTML = `
     <h1>Week ${WEEK}</h1>
     <p class="lede">${cfg.name}${noRec ? " · picks entered, no model recommendation yet" : ""}</p>
@@ -157,13 +168,6 @@ async function load() {
       <div class="stat"><div class="k">Pool weeks</div><div class="v">${cfg.week_start}–${cfg.week_end}</div></div>
     </div>
 
-    <h2>Entered vs. the model</h2>
-    <p class="hint">What's been picked for each live entry, next to what the model recommends. ✓ = entered on Splash.</p>
-    <div class="tablewrap"><table class="cmp">
-      <thead><tr><th>Entry</th><th>Entered</th><th>Model says</th><th></th></tr></thead>
-      <tbody>${cmpRows}</tbody>
-    </table></div>
-
     <h2>${noRec ? "Picks by team" : "Model's recommendation by team"}</h2>
     <p class="hint">${noRec ? "The teams you entered." : "How the model would spread your entries across teams."}</p>
     <div class="cols">${cols}</div>
@@ -172,7 +176,15 @@ async function load() {
       <div class="big">${rec.expected_total_payout != null ? "$" + rec.expected_total_payout.toFixed(2) : "—"}</div>
       <div class="kv"><span>Standard error</span><b>${rec.payout_se != null ? "± $" + rec.payout_se.toFixed(2) : "—"}</b></div>
       <div class="sub">${noRec ? "Shows once the weekly job has run." : "For the model's picks above, not necessarily the ones entered. Update the field size and pot under “This week's numbers” for a current estimate."}</div>
-    </div>`;
+    </div>
+    <details class="cmpbox">
+      <summary>Entered vs. the model <span class="dimtxt">· ${diffSummary}</span></summary>
+      <p class="hint">What's been picked for each live entry, next to what the model recommends. ✓ = entered on Splash.</p>
+      <div class="tablewrap"><table class="cmp">
+        <thead><tr><th>Entry</th><th>Entered</th><th>Model says</th><th></th></tr></thead>
+        <tbody>${cmpRows}</tbody>
+      </table></div>
+    </details>`;
 }
 
 load().catch(err => {
