@@ -14,7 +14,7 @@ WEEK4_RECOMMENDATION = {
     "entry_5": "KC", "entry_6": "BUF", "entry_7": "MIN", "entry_8": "BAL",
     "entry_9": "GB", "entry_10": "DET",
 }
-# What was actually entered for Week 5 (BMJ6 and BMJ10 have none: they lost in Week 4).
+# The Week 5 picks decided on (not yet entered on Splash as of Oct 10) (BMJ6 and BMJ10 have none: they lost in Week 4).
 # Keyed by the app's entry ids: entry_N is BMJ<N>.
 WEEK5_PICKS = {
     "entry_1": "DET", "entry_2": "PIT", "entry_3": "DEN", "entry_4": "NE",
@@ -74,7 +74,7 @@ def main() -> None:
             db.add(Pick(entry_id_fk=entries[entry_id].id, week=4, team=team, confirmed=True,
                         survived=entry_id in WEEK5_PICKS))
         for entry_id, team in WEEK5_PICKS.items():
-            db.add(Pick(entry_id_fk=entries[entry_id].id, week=5, team=team, confirmed=True))
+            db.add(Pick(entry_id_fk=entries[entry_id].id, week=5, team=team, confirmed=False))  # tick 'on Splash' once entered
 
         for entry_id, team in WEEK4_RECOMMENDATION.items():
             db.add(
