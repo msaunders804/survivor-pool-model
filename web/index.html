@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Trainò — Board</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💸%3C/text%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#0c1020;--panel:#141a2e;--panel-2:#1b2238;--line:#242c46;--line-2:#323c5c;
@@ -35,6 +36,29 @@ h1{font-size:30px;margin:0 0 6px}
   font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px}
 .navbtn:hover{border-color:var(--you);color:var(--you)}
 .navbtn.active{background:var(--you-dim);border-color:var(--you);color:var(--you)}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:0 0 22px}
+.stat{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:11px 13px}
+.stat .k{color:var(--fg-3);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.stat .v{font-family:"Bricolage Grotesque",sans-serif;font-size:22px;font-weight:800;margin-top:3px}
+.stat .v small{font-size:13px;color:var(--fg-3);font-weight:600}
+h2{font-size:16px;margin:26px 0 4px}
+.hint{color:var(--fg-3);font-size:12px;margin:0 0 12px;line-height:1.45}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px}
+table.cmp{width:100%;border-collapse:collapse;font-size:13px}
+table.cmp th{text-align:left;color:var(--fg-3);font-weight:600;font-size:11.5px;padding:9px 10px;border-bottom:1px solid var(--line-2);background:var(--panel-2)}
+table.cmp td{padding:9px 10px;border-bottom:1px solid var(--line)}
+table.cmp tr:last-child td{border-bottom:none}
+table.cmp td.e{font-weight:700;white-space:nowrap}
+.tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.tag.same{background:#12362b;color:var(--ok)} .tag.diff{background:var(--you-dim);color:var(--you)}
+.tag.none{background:var(--field-dim);color:var(--field)} .tag.out{background:#3b1a18;color:var(--out)}
+.dimtxt{color:var(--fg-3)}
+.side .sub{color:var(--fg-3);font-size:12px;margin-top:8px;line-height:1.45}
+@media (max-width:520px){
+  .wrap{padding:12px 10px} .app{padding:16px} h1{font-size:24px}
+  .navbtn{padding:6px 9px;font-size:12px} .big{font-size:30px}
+}
 </style>
 </head>
 <body>
@@ -94,21 +118,60 @@ async function load() {
       ${ownLine}
       <div class="chips">${ids.map(id => {
         const label = id.replace("entry_", "");
-        const c = confirmedByEntry[id] ? '<span class="confirmed">✓</span>' : "";
-        return `<i class="chip">${label}</i>${c}`;
+        return `<i class="chip">${label}</i>`;
       }).join("")}</div>
     </div>`;
   }).join("");
 
+  // --- compare what was entered with what the model recommends ---
+  const modelByEntry = Object.fromEntries(rec.picks.map(p => [p.entry_id, p.team]));
+  const enteredByEntry = {};
+  const outEntries = new Set();
+  entries.forEach(e => {
+    const wk = e.picks.find(p => p.week === WEEK);
+    if (wk) enteredByEntry[e.entry_id] = wk.team;
+    if (e.picks.some(p => p.survived === false)) outEntries.add(e.entry_id);
+  });
+  const aliveIds = entries.map(e => e.entry_id).filter(id => !outEntries.has(id));
+  const label = id => id.replace("entry_", "BMJ");
+
+  const cmpRows = aliveIds.map(id => {
+    const entered = enteredByEntry[id], model = modelByEntry[id];
+    let tag;
+    if (!entered) tag = '<span class="tag none">Not entered</span>';
+    else if (noRec || !model) tag = '<span class="tag none">No model pick</span>';
+    else if (entered === model) tag = '<span class="tag same">Matches</span>';
+    else tag = '<span class="tag diff">Differs</span>';
+    return `<tr><td class="e">${label(id)}</td>
+      <td>${entered ?? '<span class="dimtxt">—</span>'}${confirmedByEntry[id] ? ' <span class="confirmed" title="Entered on Splash">✓</span>' : ""}</td>
+      <td>${model ?? '<span class="dimtxt">—</span>'}</td><td>${tag}</td></tr>`;
+  }).join("");
+
   document.getElementById("app").innerHTML = `
-    <div class="eyebrow">${cfg.n_rivals} entries live · $${cfg.pot.toLocaleString()} pot · weeks ${cfg.week_start}–${cfg.week_end}</div>
-    <h1>${Object.keys(byTeam).length} teams, ${rec.picks.length} entries</h1>
-    <p class="lede">${cfg.name} — Week ${WEEK}${noRec ? " · picks entered, no model recommendation yet" : ""}</p>
+    <h1>Week ${WEEK}</h1>
+    <p class="lede">${cfg.name}${noRec ? " · picks entered, no model recommendation yet" : ""}</p>
+    <div class="stats">
+      <div class="stat"><div class="k">Your entries alive</div><div class="v">${aliveIds.length}<small> / ${entries.length}</small></div></div>
+      <div class="stat"><div class="k">Pool field</div><div class="v">${cfg.n_rivals.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">Pot</div><div class="v">$${cfg.pot.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">Pool weeks</div><div class="v">${cfg.week_start}–${cfg.week_end}</div></div>
+    </div>
+
+    <h2>Entered vs. the model</h2>
+    <p class="hint">What's been picked for each live entry, next to what the model recommends. ✓ = entered on Splash.</p>
+    <div class="tablewrap"><table class="cmp">
+      <thead><tr><th>Entry</th><th>Entered</th><th>Model says</th><th></th></tr></thead>
+      <tbody>${cmpRows}</tbody>
+    </table></div>
+
+    <h2>${noRec ? "Picks by team" : "Model's recommendation by team"}</h2>
+    <p class="hint">${noRec ? "The teams you entered." : "How the model would spread your entries across teams."}</p>
     <div class="cols">${cols}</div>
     <div class="side">
-      <div class="eyebrow">If you submit this</div>
+      <div class="eyebrow">Model's expected payout</div>
       <div class="big">${rec.expected_total_payout != null ? "$" + rec.expected_total_payout.toFixed(2) : "—"}</div>
       <div class="kv"><span>Standard error</span><b>${rec.payout_se != null ? "± $" + rec.payout_se.toFixed(2) : "—"}</b></div>
+      <div class="sub">${noRec ? "Shows once the weekly job has run." : "For the model's picks above, not necessarily the ones entered. Update the field size and pot under “This week's numbers” for a current estimate."}</div>
     </div>`;
 }
 
