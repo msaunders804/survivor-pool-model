@@ -13,11 +13,13 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from survivor.data.team_keys import to_abbreviation
 from survivor.data.schedule_client import (
     SCOREBOARD_URL, add_effective_lock_times, compute_bye_teams, fetch_week_schedule, parse_week_schedule,
 )
 
 GAMES_TTL_SECONDS = 30 * 60
+RESULTS_TTL_SECONDS = 10 * 60
 CALENDAR_TTL_SECONDS = 12 * 60 * 60
 # ESPN's NFL week runs Wednesday 3am ET to the next Wednesday. The pool's week turns a
 # day earlier -- Tuesday 3am ET, once Monday night's game is over -- so a Tuesday
@@ -54,6 +56,26 @@ def week_games(week: int, year: int) -> dict:
             "byes": compute_bye_teams(games),
         }
     return _cached(("games", week, year), GAMES_TTL_SECONDS, fetch)
+
+
+def week_results(week: int, year: int) -> dict[str, str]:
+    """{team: 'won' | 'lost' | 'tie'} for that week's games that are final. Games still to be
+    played or in progress are left out, so callers can't mistake them for a result."""
+    return _cached(("results", week, year), RESULTS_TTL_SECONDS, lambda: parse_results(fetch_week_schedule(week, year)))
+
+
+def parse_results(raw: dict) -> dict[str, str]:
+    results = {}
+    for event in raw.get("events", []):
+        competition = event["competitions"][0]
+        if not competition.get("status", {}).get("type", {}).get("completed"):
+            continue
+        teams = competition["competitors"]
+        scores = [float(t.get("score") or 0) for t in teams]
+        for team, score, other in zip(teams, scores, reversed(scores)):
+            outcome = "tie" if score == other else "won" if score > other else "lost"
+            results[to_abbreviation(team["team"]["displayName"])] = outcome
+    return results
 
 
 def season_calendar(year: int) -> list[tuple[int, datetime, datetime]]:

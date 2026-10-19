@@ -36,10 +36,25 @@ def main() -> None:
     from ingest import export_availability, export_picks
     from models import League, SessionLocal
     from nfl import advance_league_week
+    from auto_results import fill_pending_results
     from seed import seed_if_empty
 
     seed_if_empty()
     store_root = REPO_ROOT / "data_store"
+
+    # Before reading any history: fill in Won/Lost from final scores for picks still pending,
+    # so an entry that lost last week isn't planned for.
+    db = SessionLocal()
+    try:
+        league = db.get(League, args.league_id)
+        if league is not None:
+            if args.week is None and advance_league_week(db, league):
+                print(f"Week advanced to {league.current_week} from the NFL calendar.")
+            n_filled = fill_pending_results(db, league)
+            if n_filled:
+                print(f"Filled in {n_filled} pick result(s) from final scores.")
+    finally:
+        db.close()
 
     if args.week is None or args.n_rivals is None or args.pot is None:
         db = SessionLocal()
@@ -47,8 +62,6 @@ def main() -> None:
             league = db.get(League, args.league_id)
             if league is None:
                 raise SystemExit(f"league {args.league_id} not found -- has Brent opened update.html yet?")
-            if args.week is None and advance_league_week(db, league):
-                print(f"Week advanced to {league.current_week} from the NFL calendar.")
             args.week = args.week or league.current_week
             args.n_rivals = args.n_rivals or league.n_rivals
             args.pot = args.pot or league.pot

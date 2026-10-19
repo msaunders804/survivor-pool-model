@@ -110,24 +110,23 @@ async function load() {
   const prev = WEEK - 1;
   const pendingPrev = entries.filter(e => e.picks.some(p => p.week === prev && p.survived == null)).length;
   const pastedAvail = ownership.some(o => o.available != null);
-  const onSplash = aliveIds.filter(id => confirmedByEntry[id]).length;
-  const notOnSplash = aliveIds.filter(id => !confirmedByEntry[id]);
-  const nextLock = notOnSplash.map(id => mu.lock(enteredByEntry[id] || modelByEntry[id])).filter(Boolean).sort((a, b) => a - b)[0];
+  const firstLock = aliveIds.map(id => mu.lock(enteredByEntry[id] || modelByEntry[id])).filter(Boolean).sort((a, b) => a - b)[0];
   const steps = [];
   if (prev >= cfg.week_start) steps.push(pendingPrev === 0
     ? { done: true, text: `Week ${prev} results recorded` }
-    : { done: false, text: `Mark Week ${prev} results — ${pendingPrev} pick${pendingPrev > 1 ? "s" : ""} still pending`, href: "results.html", go: "Results" });
+    : { done: false, text: `Week ${prev} results — ${pendingPrev} pick${pendingPrev > 1 ? "s" : ""} waiting on a final score`, href: "results.html", go: "Results" });
   if (WEEK > cfg.week_start) steps.push(pastedAvail
     ? { done: true, text: `Availability report pasted${cfg.n_rivals ? ` (${cfg.n_rivals.toLocaleString()} live entries)` : ""}` }
     : { done: false, text: "Paste Splash's availability report", href: "ownership.html", go: "Availability" });
   steps.push(noRec
     ? { done: false, text: "Model runs Wednesday at noon ET", wait: true }
     : { done: true, text: "Model has run for this week" });
-  steps.push(notOnSplash.length === 0
-    ? { done: true, text: `All ${aliveIds.length} picks entered on Splash` }
-    : { done: false, text: `${onSplash} of ${aliveIds.length} picks entered on Splash${nextLock ? ` · next lock ${lockText(nextLock)}` : ""}`, href: "picks.html", go: "Picks" });
+  // Not a to-do: the model's picks are already saved. Brent only acts if he goes a different way.
+  if (!noRec) steps.push({ info: true,
+    text: `Enter picks on Splash${firstLock ? ` before ${lockText(firstLock)}` : ""}. The model's picks are already saved here, so only change one on Picks if you choose a different team`,
+    href: "picks.html", go: "Picks" });
   const checklist = `<ol class="checklist">${steps.map(st => `
-    <li class="${st.done ? "done" : st.wait ? "wait" : "todo"}"><span class="mark"></span><span>${st.text}</span>
+    <li class="${st.done ? "done" : st.info ? "info" : st.wait ? "wait" : "todo"}"><span class="mark"></span><span>${st.text}</span>
       ${st.href ? `<a href="${st.href}">${st.go} →</a>` : ""}</li>`).join("")}</ol>`;
 
   document.getElementById("app").innerHTML = `

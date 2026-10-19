@@ -22,6 +22,7 @@ from survivor.data.team_keys import ALL_TEAMS
 from auth import check_password, issue_token, require_auth
 from models import Entry, League, Ownership, Pick, Recommendation, SessionLocal, init_db
 from nfl import advance_league_week, week_games
+from auto_results import fill_pending_results
 
 app = FastAPI(title="Survivor Pool API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -232,6 +233,7 @@ def get_config(league_id: int):
         if league is None:
             raise HTTPException(404, f"league {league_id} not found")
         advance_league_week(db, league)  # the week turns by itself each Tuesday; no one has to bump it
+        fill_pending_results(db, league)  # Won/Lost from final scores, for picks still pending
         return LeagueConfigOut(
             name=league.name, entry_cap=league.entry_cap, buy_in=league.buy_in,
             rake_pct=league.rake_pct, pot=league.pot, week_start=league.week_start,

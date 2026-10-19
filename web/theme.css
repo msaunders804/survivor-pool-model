@@ -109,6 +109,9 @@ a{color:var(--you)}
 .checklist li.todo .mark{border-color:var(--you)}
 .checklist li.todo{font-weight:600}
 .checklist li.wait .mark{border-style:dashed}
+.checklist li.info{color:var(--fg-2)}
+.checklist li.info .mark{border-color:var(--field);border-width:2px}
+.checklist li.info .mark::after{content:"";width:4px;height:4px;border-radius:99px;background:var(--field)}
 .checklist li span:nth-child(2){flex:1}
 .checklist a{font-size:13px;font-weight:600;color:var(--you);text-decoration:none;white-space:nowrap}
 .checklist a:hover{text-decoration:underline}
