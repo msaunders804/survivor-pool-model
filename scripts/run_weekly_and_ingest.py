@@ -34,7 +34,7 @@ def main() -> None:
 
     sys.path.insert(0, str(REPO_ROOT / "api"))
     from ingest import export_availability, export_picks
-    from models import League, SessionLocal
+    from models import League, Ownership, SessionLocal
     from nfl import advance_league_week
     from auto_results import fill_pending_results
     from seed import seed_if_empty
@@ -83,9 +83,19 @@ def main() -> None:
     db = SessionLocal()
     try:
         n_alive = export_availability(db, args.league_id, args.week, availability_path)
+        if n_alive is None:
+            pasted_weeks = sorted({
+                w for (w,) in db.query(Ownership.week)
+                .filter(Ownership.league_id == args.league_id, Ownership.available.isnot(None))
+                .distinct()
+            })
     finally:
         db.close()
     if n_alive is None and args.week > LEAGUE_START_WEEK:
+        if pasted_weeks:
+            print(f"Availability has been pasted for week(s) {pasted_weeks}, but this run is for week "
+                  f"{args.week} -- they don't match, so it won't be used. (Likely cause: the Availability page's "
+                  "tab was open from before the week turned over, so the paste got tagged to the old week.)")
         print(f"No availability report pasted on the Ownership page for week {args.week} -- rivals assumed "
               f"fresh at --n-rivals {args.n_rivals}.")
 

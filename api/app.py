@@ -293,25 +293,31 @@ def save_ownership(league_id: int, body: OwnershipIn):
         raise HTTPException(400, "couldn't parse any lines -- expected 'TEAM: AVAILABLE/LIVE (PCT%)', 'TEAM COUNT' or 'TEAM PCT% COUNT' per line")
     db = SessionLocal()
     try:
+        league = db.get(League, league_id)
+        if league is None:
+            raise HTTPException(404, f"league {league_id} not found")
+        # Re-derive the current week right now rather than trusting body.week: the page fetches
+        # its week once on load, so a tab left open across the Tuesday turnover would otherwise
+        # tag the paste to the week that just ended, and the weekly job would never find it.
+        advance_league_week(db, league)
+        week = league.current_week
         # a re-paste replaces the whole week's table, so a team dropped from it doesn't linger
-        db.query(Ownership).filter_by(league_id=league_id, week=body.week).delete()
+        db.query(Ownership).filter_by(league_id=league_id, week=week).delete()
         for row in rows:
             existing = (
                 db.query(Ownership)
-                .filter_by(league_id=league_id, week=body.week, team=row["team"])
+                .filter_by(league_id=league_id, week=week, team=row["team"])
                 .one_or_none()
             )
             if existing is None:
-                existing = Ownership(league_id=league_id, week=body.week, team=row["team"])
+                existing = Ownership(league_id=league_id, week=week, team=row["team"])
                 db.add(existing)
             existing.pick_count = row.get("pick_count")
             existing.pct = row.get("pct")
             existing.available = row.get("available")
             existing.n_alive = row.get("n_alive")
         if rows[0].get("n_alive"):
-            league = db.get(League, league_id)
-            if league is not None:
-                league.n_rivals = rows[0]["n_alive"]  # keep the fallback rival count in step with the latest report
+            league.n_rivals = rows[0]["n_alive"]  # keep the fallback rival count in step with the latest report
         db.commit()
         return [OwnershipRow(**r) for r in rows]
     finally:

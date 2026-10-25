@@ -73,6 +73,10 @@ document.getElementById("save").addEventListener("click", async () => {
     });
     if (!res.ok) throw new Error(await res.text());
     const rows = await res.json();
+    // the server tags the paste to its own freshly-computed current week, which may have moved on
+    // since this tab was loaded (e.g. left open across the Tuesday turnover) -- re-sync the label
+    WEEK = await getCurrentWeek(LEAGUE);
+    document.getElementById("wk").textContent = WEEK;
     status.textContent = `Saved ${rows.length} teams${rows[0].n_alive ? ` (${rows[0].n_alive} live entries)` : ""}.`; status.className = "status ok";
     renderTable(rows);
   } catch (err) {
