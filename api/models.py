@@ -35,7 +35,13 @@ DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{_LOCAL_DB_PATH}")
 for _prefix in ("postgres://", "postgresql://"):
     if DATABASE_URL.startswith(_prefix):
         DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len(_prefix):]
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
+#  psycopg2 has no default connect timeout, so an unreachable Postgres (paused, expired, or a
+# bad DATABASE_URL) hangs init_db() silently instead of erroring -- which looks identical to a
+# slow deploy until Render's own port-scan timeout (~15 min) kills it with no clue why.
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {"connect_timeout": 10},
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
