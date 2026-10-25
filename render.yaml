@@ -12,6 +12,10 @@
 # one shared password the three of you log in with (web/login.html);
 # SECRET_KEY signs the session token -- any random string, set once,
 # never needs to be memorized.
+#
+# Python version for both services comes from runtime.txt at the repo root --
+# requirements.txt has no upper bounds, so without that pin a build can drift
+# onto whatever CPython is newest and break (see the Oct 25 deploy hang).
 
 databases:
   - name: survivor-db
