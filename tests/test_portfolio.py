@@ -590,3 +590,21 @@ def test_best_allocations_results_carry_win_probability():
     sim = _real_sim()
     results = best_allocations(sim, ["BUF", "KC"], n_entries=3)
     assert all(0.0 <= r.win_probability <= 1.0 for r in results)
+
+
+
+def test_stackable_teams_forces_distinct_unless_team_is_exempt():
+    # expected_payout alone would stack both entries on the clearly better BUF
+    n_paths = 100
+    buf_survives = np.zeros(n_paths, dtype=bool)
+    buf_survives[:90] = True
+    kc_survives = np.zeros(n_paths, dtype=bool)
+    kc_survives[:30] = True
+    sim = _single_week_sim_with_fixed_outcomes(buf_survives, kc_survives)
+    used = {"e1": set(), "e2": set()}
+    free = greedy_local_entry_allocation(sim, used, ["BUF", "KC"], objective="expected_payout")
+    assert set(free.values()) == {"BUF"}
+    forced = greedy_local_entry_allocation(sim, used, ["BUF", "KC"], objective="expected_payout", stackable_teams=set())
+    assert sorted(forced.values()) == ["BUF", "KC"]
+    exempt = greedy_local_entry_allocation(sim, used, ["BUF", "KC"], objective="expected_payout", stackable_teams={"BUF"})
+    assert set(exempt.values()) == {"BUF"}

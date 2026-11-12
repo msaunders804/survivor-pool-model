@@ -135,6 +135,9 @@ def refresh_odds() -> pd.DataFrame:
     events = client.get_odds()
     save_raw_pull("the_odds_api_nfl", events)
     odds = parse_odds_events(events)
+    latest = DEFAULT_STORE_ROOT / "odds" / "latest.csv"  # so --skip-odds-refresh reruns reuse this pull, not a stale one
+    latest.parent.mkdir(parents=True, exist_ok=True)
+    odds.to_csv(latest, index=False)
     print(f"  {odds['game_id'].nunique()} games. Quota -- used: {client.last_quota_used}, "
           f"remaining: {client.last_quota_remaining}")
     return odds
@@ -149,6 +152,9 @@ def main() -> None:
     parser.add_argument("--week", type=int, required=True, help="the current week to decide for")
     parser.add_argument("--year", type=int, default=2026)
     parser.add_argument("--n-entries", type=int, default=10)
+    parser.add_argument("--entry-ids", default=None,
+                         help="comma-separated entry ids to optimize (e.g. entry_1,entry_7,entry_8); default: "
+                              "entry_1..--n-entries. Entries not listed are ignored, not treated as eliminated.")
     parser.add_argument("--n-rivals", type=int, default=500,
                          help="assumed field size -- unknown until lock day (ignored with --rival-availability, "
                               "which carries the real live-entry count)")
@@ -168,6 +174,14 @@ def main() -> None:
                               "'expected_payout' (risk-neutral -- maximizes average total payout, happy to put two "
                               "entries on the same team when that's each one's own best move -- the other "
                               "objective's numbers are always printed alongside the chosen one for comparison)")
+    parser.add_argument("--allow-stacking", action="store_true",
+                         help="turn off the force-distinct-teams rule (see --stack-min-win)")
+    parser.add_argument("--stack-min-win", type=float, default=0.90,
+                         help="entries are forced onto distinct teams, except the week's top team may hold several "
+                              "entries when its win probability is above this AND the next-best team playing is "
+                              "below --stack-max-alt (default 0.90)")
+    parser.add_argument("--stack-max-alt", type=float, default=0.50,
+                         help="see --stack-min-win (default 0.50)")
     parser.add_argument("--pot", type=float, default=9000.0)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--skip-odds-refresh", action="store_true",
@@ -248,7 +262,8 @@ def main() -> None:
         rival_model=args.rival_model, rival_state=rival_state,
     )
 
-    entry_ids = [f"entry_{i + 1}" for i in range(args.n_entries)]
+    entry_ids = (args.entry_ids.split(",") if args.entry_ids
+                 else [f"entry_{i + 1}" for i in range(args.n_entries)])
     alive_ids = my_entries.alive_entries(entry_ids)
     if not alive_ids:
         raise SystemExit(f"No alive entries among {entry_ids} -- nothing to recommend.")
@@ -267,6 +282,19 @@ def main() -> None:
     # just to rebuild each result's own payout array for scoring.
     elimination_cache: dict = {}
 
+    stackable: set[str] | None = None
+    if not args.allow_stacking:
+        ranked = sorted((t for t in all_teams_playing if t in current_week_survival),
+                        key=current_week_survival.get, reverse=True)
+        stackable = set()
+        if len(ranked) >= 2 and current_week_survival[ranked[0]] > args.stack_min_win \
+                and current_week_survival[ranked[1]] < args.stack_max_alt:
+            stackable = {ranked[0]}
+        print(f"Force-distinct-teams on: top team {ranked[0]} {current_week_survival[ranked[0]]:.1%}, "
+              f"next {ranked[1]} {current_week_survival[ranked[1]]:.1%} -> "
+              + (f"stacking allowed on {sorted(stackable)}" if stackable else "no stacking allowed")
+              + f" (exemption needs top > {args.stack_min_win:.0%} and next < {args.stack_max_alt:.0%})")
+
     def cached_arrays(assignment: dict[str, str]) -> dict:
         return {
             entry_id: elimination_cache[(frozenset(used_teams_by_entry[entry_id]), team)]
@@ -278,7 +306,8 @@ def main() -> None:
         return f"{payouts.mean():.2f} (SE {se:.2f}), {(payouts > 0).mean():.1%} chance of any payout"
 
     recommendation = greedy_local_entry_allocation(
-        sim, used_teams_by_entry, all_teams_playing, elimination_weeks=elimination_cache, objective=args.objective
+        sim, used_teams_by_entry, all_teams_playing, elimination_weeks=elimination_cache, objective=args.objective,
+        stackable_teams=stackable,
     )
 
     team_counts: dict[str, int] = {}
@@ -297,7 +326,8 @@ def main() -> None:
         # actually a tradeoff to see
         alt_objective = next(o for o in OBJECTIVES if o != args.objective)
         alt_recommendation = greedy_local_entry_allocation(
-            sim, used_teams_by_entry, all_teams_playing, elimination_weeks=elimination_cache, objective=alt_objective
+            sim, used_teams_by_entry, all_teams_playing, elimination_weeks=elimination_cache, objective=alt_objective,
+            stackable_teams=stackable,
         )
         alt_counts: dict[str, int] = {}
         for team in alt_recommendation.values():
@@ -309,7 +339,8 @@ def main() -> None:
     top_candidates = sorted(current_week_survival, key=current_week_survival.get, reverse=True)[:TOP_N_FOR_SANITY_CHECK]
     top_candidates = [t for t in top_candidates if t in all_teams_playing]
     sanity_check = greedy_local_entry_allocation(
-        sim, used_teams_by_entry, top_candidates, elimination_weeks=elimination_cache, objective=args.objective
+        sim, used_teams_by_entry, top_candidates, elimination_weeks=elimination_cache, objective=args.objective,
+        stackable_teams=stackable,
     )
     sanity_payout = score_entries(sim, cached_arrays(sanity_check))
     print(f"\nSanity check -- same search and objective, restricted to the top {len(top_candidates)} candidates by "
