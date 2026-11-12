@@ -469,6 +469,7 @@ def greedy_local_entry_allocation(
     candidate_teams: list[str],
     elimination_weeks: dict[tuple[frozenset, str], np.ndarray] | None = None,
     objective: str = "expected_payout",
+    stackable_teams: set[str] | None = None,
 ) -> dict[str, str]:
     """Heuristic per-entry team assignment for entries with diverged histories.
 
@@ -508,6 +509,12 @@ def greedy_local_entry_allocation(
     (used-teams signature, team), so entries who happen to share an
     identical history so far -- common right after they first diverge --
     don't pay for duplicate Hungarian-assignment solves.
+
+    stackable_teams: if not None, force distinct teams -- a team outside
+    this set holds at most one entry (pass set() to forbid all stacking).
+    If an entry has no un-taken eligible team left (more entries than
+    distinct options), it falls back to any eligible team rather than
+    failing, so the constraint is best-effort only in that corner.
 
     Raises if any entry has no eligible team left among candidate_teams, or
     if more entries are passed than this league's MAX_ENTRIES allows. Not
@@ -550,8 +557,16 @@ def greedy_local_entry_allocation(
     order = sorted(eligible, key=lambda entry_id: len(eligible[entry_id]))
     assignment: dict[str, str] = {}
     totals = _Totals.zero(sim)  # running totals for `assignment`, moved by add/subtract
+
+    def blocked(entry_id: str, team: str) -> bool:
+        """True if putting entry_id on team would stack it on another entry where that isn't allowed."""
+        if stackable_teams is None or team in stackable_teams:
+            return False
+        return any(t == team for other, t in assignment.items() if other != entry_id)
+
     for entry_id in order:
-        best_team = max(eligible[entry_id], key=lambda team: score_of(totals + contribution(entry_id, team)))
+        options = [t for t in eligible[entry_id] if not blocked(entry_id, t)] or eligible[entry_id]
+        best_team = max(options, key=lambda team: score_of(totals + contribution(entry_id, team)))
         assignment[entry_id] = best_team
         totals = totals + contribution(entry_id, best_team)
 
@@ -563,7 +578,7 @@ def greedy_local_entry_allocation(
         # single-entry moves
         for entry_id in entry_ids:
             for team in eligible[entry_id]:
-                if team == assignment[entry_id]:
+                if team == assignment[entry_id] or blocked(entry_id, team):
                     continue
                 trial_totals = totals - contribution(entry_id, assignment[entry_id]) + contribution(entry_id, team)
                 trial_score = score_of(trial_totals)
